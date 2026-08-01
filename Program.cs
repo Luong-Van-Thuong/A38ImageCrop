@@ -29,6 +29,13 @@ public static class Config
 
     /// <summary>true = nếu vùng là tứ giác thì nắn phẳng (warp); false = luôn cắt theo hình chữ nhật bao.</summary>
     public static bool WarpIfQuad = true;
+
+    /// <summary>
+    /// Đường dẫn ảnh đầu vào — sửa trực tiếp ở đây rồi bấm Run (tiện khi chạy trong Visual Studio,
+    /// không cần truyền tham số dòng lệnh). Để trống ("") thì chương trình sẽ dùng tham số dòng lệnh
+    /// (dotnet run -- "duong_dan.jpg"), hoặc tự tạo sample.png nếu không có gì cả.
+    /// </summary>
+    public static string InputImagePath = "C:\\THUONG\\Images\\V2\\CoilAssy\\1240S\\opencv\\1.bmp";
 }
 
 public static class Program
@@ -47,8 +54,12 @@ public static class Program
         if (i >= 0 && i + 1 < args.Length) Dbg.Filter = args[i + 1];
 
         // ---- Ảnh đầu vào ------------------------------------------------------
-        var inputPath = args.FirstOrDefault(a => !a.StartsWith("--"))
-                        ?? EnsureSampleImage();
+        // Ưu tiên Config.InputImagePath (sửa trong code), rồi tới tham số dòng lệnh,
+        // cuối cùng mới tự tạo ảnh mẫu.
+        var inputPath = !string.IsNullOrWhiteSpace(Config.InputImagePath)
+                        ? Config.InputImagePath
+                        : args.FirstOrDefault(a => !a.StartsWith("--"))
+                          ?? EnsureSampleImage();
 
         if (!File.Exists(inputPath))
         {
@@ -107,16 +118,23 @@ public static class Program
 
         // --- B2: chuyển xám. Mọi thuật toán dò cạnh đều cần ảnh 1 kênh.
         using var gray = new Mat();
+
+
+        // Tý thử đổi về 0 hoặc các cái khác xem nó biến đổi ảnh như thế nào  ------------
+
         Cv2.CvtColor(work, gray, ColorConversionCodes.BGR2GRAY);
         Dbg.Show(gray, "gray");
 
         // --- B3: làm mờ để bớt nhiễu, tránh Canny bắt phải hạt nhiễu.
         using var blur = new Mat();
+
+        // Điều chỉnh BlurKernel và BlurKernel sang một số khác thì nó sẽ như nào 
         Cv2.GaussianBlur(gray, blur, new Size(Config.BlurKernel, Config.BlurKernel), 0);
         Dbg.Show(blur, "blur");
 
         // --- B4: dò cạnh.
         using var edges = new Mat();
+        // Điều chỉnh cạnh CannyLow và CannyHigh sang số kahcs thì nó như nào ảnh tìm được trả về kết quả như nào 
         Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
         Dbg.Show(edges, "canny");
         // Mẹo: nonzero% ở dòng stats nói lên nhiều thứ —
@@ -140,7 +158,31 @@ public static class Program
         // --- B6: tìm đường viền.
         Cv2.FindContours(closed, out Point[][] contours, out _,
             RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-        Dbg.Log($"tìm được {contours.Length} contour");
+        var imgContours = gray.Clone();
+        Cv2.CvtColor(imgContours, imgContours, ColorConversionCodes.GRAY2BGR);
+        for (int i = 0; i < contours.Length; i++)
+        {
+            // 1. Tạo màu HSV: H (0-179), S (255 - rực rỡ nhất), V (255 - sáng nhất)
+            byte hue = (byte)(i * 179 / contours.Length);
+            Mat hsvPixel = new Mat(1, 1, MatType.CV_8UC3, new Scalar(hue, 255, 255));
+            Mat bgrPixel = new Mat();
+
+            // 2. Convert HSV -> BGR để lấy Scalar chuẩn cho DrawContours
+            Cv2.CvtColor(hsvPixel, bgrPixel, ColorConversionCodes.HSV2BGR);
+            Vec3b bgr = bgrPixel.At<Vec3b>(0, 0);
+            Scalar color = new Scalar(bgr.Item0, bgr.Item1, bgr.Item2);
+
+            // 3. Vẽ contour
+            Cv2.DrawContours(imgContours, contours, i, color, 2);
+
+            // Giải phóng bộ nhớ Mat tạm
+            hsvPixel.Dispose();
+            bgrPixel.Dispose();
+        }    
+            
+
+        Dbg.Show(imgContours, "imgContours");
+        Dbg.Log($"tim duoc {contours.Length} contour");
 
         double imageArea = work.Width * (double)work.Height;
         var candidates = contours
@@ -201,6 +243,49 @@ public static class Program
             return cropped;
         }
     }
+
+    // Tìm vị trí của 4 đỉnh trong tứ giác xem đỉnh nào có viền giống hình tứ giác nhỏ bị nghiêng khoảng 45 độ rồi cắt ảnh 
+    public static Mat? CropLargestRegion2(Mat src)
+    {
+
+        Dbg.Show(src, "img lage sau khi crop");
+        // --- B1: thu nhỏ để dò cho nhanh. Toạ độ tìm được sẽ nhân ngược lại sau.
+        double scale = Math.Min(1.0, (double)Config.WorkWidth / src.Width);
+        using var work = new Mat();
+        if (scale < 1.0)
+            Cv2.Resize(src, work, new Size(), scale, scale, InterpolationFlags.Area);
+        else
+            src.CopyTo(work);
+        Dbg.Log($"scale dò = {scale:0.###} -> làm việc trên {work.Width}x{work.Height}");
+        // --- B2: chuyển xám. Mọi thuật toán dò cạnh đều cần ảnh 1 kênh.
+        using var gray = new Mat();
+        Cv2.CvtColor(work, gray, ColorConversionCodes.BGR2GRAY);
+        Dbg.Show(gray, "gray");
+        // --- B3: làm mờ để bớt nhiễu, tránh Canny bắt phải hạt nhiễu.
+        using var blur = new Mat();
+        Cv2.GaussianBlur(gray, blur, new Size(Config.BlurKernel, Config.BlurKernel), 0);
+        Dbg.Show(blur, "blur");
+        // --- B4: dò cạnh.
+        using var edges = new Mat();
+        Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
+        Dbg.Show(edges, "canny");
+        // --- B5: nối các cạnh bị đứt để contour khép kín được.
+        using var closed = new Mat();
+        if (Config.MorphKernel > 0)
+        {
+            using var kernel = Cv2.GetStructuringElement(
+                MorphShapes.Rect, new Size(Config.MorphKernel, Config.MorphKernel));
+            Cv2.MorphologyEx(edges, closed, MorphTypes.Close, kernel);
+            Dbg.Show(closed, "morph_close");
+        }
+        else
+        {
+            edges.CopyTo(closed);
+        }
+        var cropping = new Mat();
+        return cropping;
+    }
+
 
     /// <summary>Sắp 4 đỉnh theo thứ tự: trên-trái, trên-phải, dưới-phải, dưới-trái.</summary>
     private static Point2f[] OrderCorners(Point2f[] pts)
