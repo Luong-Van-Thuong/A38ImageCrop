@@ -1,4 +1,6 @@
 using OpenCvSharp;
+using OpenCvSharp.XImgProc;
+using OpenCvSharp.XPhoto;
 
 namespace A38.ImageCrop;
 
@@ -35,7 +37,7 @@ public static class Config
     /// không cần truyền tham số dòng lệnh). Để trống ("") thì chương trình sẽ dùng tham số dòng lệnh
     /// (dotnet run -- "duong_dan.jpg"), hoặc tự tạo sample.png nếu không có gì cả.
     /// </summary>
-    public static string InputImagePath = "C:\\THUONG\\Images\\V2\\CoilAssy\\1240S\\opencv\\1.bmp";
+    public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-35-18.bmp";
 }
 
 public static class Program
@@ -79,7 +81,12 @@ public static class Program
 
         // ---- Chạy pipeline ----------------------------------------------------
         using var result = CropLargestRegion(src);
-
+        using var imgTrenTrai = CropSmallRegion(result);
+        if (result!=null)
+        {
+            
+        }    
+        
         if (result is null || result.Empty())
         {
             Console.WriteLine("KHÔNG dò được vùng nào. Thử giảm Config.CannyLow hoặc Config.MinAreaRatio.");
@@ -158,6 +165,8 @@ public static class Program
         // --- B6: tìm đường viền.
         Cv2.FindContours(closed, out Point[][] contours, out _,
             RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+
+
         var imgContours = gray.Clone();
         Cv2.CvtColor(imgContours, imgContours, ColorConversionCodes.GRAY2BGR);
         for (int i = 0; i < contours.Length; i++)
@@ -178,10 +187,10 @@ public static class Program
             // Giải phóng bộ nhớ Mat tạm
             hsvPixel.Dispose();
             bgrPixel.Dispose();
-        }    
-            
-
+        }
         Dbg.Show(imgContours, "imgContours");
+
+
         Dbg.Log($"tim duoc {contours.Length} contour");
 
         double imageArea = work.Width * (double)work.Height;
@@ -232,12 +241,14 @@ public static class Program
         else
         {
             var r = Cv2.BoundingRect(best);
+            int paddingFull = 20;
+            // x+y nhỏ nhất là trên trái
             var full = new Rect(
-                (int)(r.X / scale), (int)(r.Y / scale),
-                (int)(r.Width / scale), (int)(r.Height / scale))
+                (int)(r.X / scale - paddingFull), (int)(r.Y / scale - paddingFull),
+                (int)(r.Width / scale + 2*paddingFull) , (int)(r.Height / scale + 2*paddingFull))
                 .Intersect(new Rect(0, 0, src.Width, src.Height));
 
-            Dbg.Log($"cắt theo hình chữ nhật bao: {full}");
+            Dbg.Log($"Cat theo hinh chu nhat bao quanh: {full}");
             var cropped = new Mat(src, full).Clone();
             Dbg.Show(cropped, "result_crop");
             return cropped;
@@ -245,48 +256,154 @@ public static class Program
     }
 
     // Tìm vị trí của 4 đỉnh trong tứ giác xem đỉnh nào có viền giống hình tứ giác nhỏ bị nghiêng khoảng 45 độ rồi cắt ảnh 
-    public static Mat? CropLargestRegion2(Mat src)
+    public static Mat? CropSmallRegion(Mat src)
     {
 
+        List<Mat> imgCuonDay = new();
+
         Dbg.Show(src, "img lage sau khi crop");
-        // --- B1: thu nhỏ để dò cho nhanh. Toạ độ tìm được sẽ nhân ngược lại sau.
-        double scale = Math.Min(1.0, (double)Config.WorkWidth / src.Width);
-        using var work = new Mat();
-        if (scale < 1.0)
-            Cv2.Resize(src, work, new Size(), scale, scale, InterpolationFlags.Area);
+
+        // Tim vi tri cac diem cac toa do cac dinh 
+        int w = src.Width;
+        int h = src.Height;
+        int roiW = 500;
+        int roiH = 500;
+        int paddingHeight = 100;
+        Point topLeft = new(0, 0);
+        Point topRight = new(w - 1, 0);
+        Point bottomLeft = new(0, h - 1);
+        Point bottomRight = new(w - 1, h - 1);
+
+
+
+        // Crop 4 hình chữ nhật nhỏ ở 4 góc của ảnh lớn 
+
+        // Crop tren trai
+        Rect imgAreaTrenTrai = new(topLeft.X, topLeft.Y, roiW, roiH);
+        Mat imgTrenTrai = new(src, imgAreaTrenTrai);
+        Dbg.Show(imgTrenTrai, "Img_Tren_Trai");
+        // Kiem tra xem trong img co blob nao co hinh dang hinh chu nhat hay khong 
+
+
+        // Crop tren phai
+        Rect imgAreaTrenPhai = new(topRight.X- roiW, topRight.Y + 50, roiW, roiH);
+        Mat imgTrenPhai = new(src, imgAreaTrenPhai);
+
+        // 2. Chuyển xám chuẩn 1 kênh (Bảo vệ code không crash)
+        Mat gray = new();
+        if (imgTrenPhai.Channels() == 3)
+            Cv2.CvtColor(imgTrenPhai, gray, ColorConversionCodes.BGR2GRAY);
+        else if (imgTrenPhai.Channels() == 4)
+            Cv2.CvtColor(imgTrenPhai, gray, ColorConversionCodes.BGRA2GRAY);
         else
-            src.CopyTo(work);
-        Dbg.Log($"scale dò = {scale:0.###} -> làm việc trên {work.Width}x{work.Height}");
-        // --- B2: chuyển xám. Mọi thuật toán dò cạnh đều cần ảnh 1 kênh.
-        using var gray = new Mat();
-        Cv2.CvtColor(work, gray, ColorConversionCodes.BGR2GRAY);
-        Dbg.Show(gray, "gray");
-        // --- B3: làm mờ để bớt nhiễu, tránh Canny bắt phải hạt nhiễu.
-        using var blur = new Mat();
-        Cv2.GaussianBlur(gray, blur, new Size(Config.BlurKernel, Config.BlurKernel), 0);
-        Dbg.Show(blur, "blur");
-        // --- B4: dò cạnh.
-        using var edges = new Mat();
-        Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
-        Dbg.Show(edges, "canny");
-        // --- B5: nối các cạnh bị đứt để contour khép kín được.
-        using var closed = new Mat();
-        if (Config.MorphKernel > 0)
+            gray = imgTrenPhai.Clone();
+
+        // 3. Blur + Canny (Dùng biến edges riêng biệt)
+        Mat blurred = new();
+        Cv2.GaussianBlur(gray, blurred, new Size(5, 5), 0);
+
+        Mat edges = new();
+        Cv2.Canny(blurred, edges, 100, 200);
+
+        // 4. XÓA VIỀN RÁC BẰNG MARGIN (Xóa hẳn 15px sát mép để triệt hạ nhiễu góc)
+        int margin = 15;
+        Cv2.Rectangle(edges, new Rect(0, 0, edges.Width, edges.Height), new Scalar(0), 2);
+
+        Mat kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(5, 5));
+        Mat imgDilate = new();
+        Cv2.Dilate(edges, imgDilate, kernel);
+        Dbg.Show(edges, "Dilate");
+        LineSegmentPoint[] linePointSeg = Cv2.HoughLinesP(
+            edges, 
+            rho: 1, 
+            theta: Math.PI/180, 
+            threshold: 50, 
+            minLineLength: 50, 
+            maxLineGap: 10
+        );
+
+        List<Point> allEdgePoints = new();
+        if(linePointSeg.Length > 0)
         {
-            using var kernel = Cv2.GetStructuringElement(
-                MorphShapes.Rect, new Size(Config.MorphKernel, Config.MorphKernel));
-            Cv2.MorphologyEx(edges, closed, MorphTypes.Close, kernel);
-            Dbg.Show(closed, "morph_close");
+            foreach (var seg in linePointSeg)
+            {
+                allEdgePoints.Add(seg.P1);
+                allEdgePoints.Add(seg.P2);
+            }
         }
-        else
+
+
+        Line2D line = Cv2.FitLine(allEdgePoints, DistanceTypes.Fair, 0, 0.01, 0.01);
+        double a = -line.Vy;
+        double b = line.Vx;
+        double c = -(a * line.X1 + b * line.Y1);
+        double denom = Math.Sqrt(a * a + b * b);
+
+        double distanceThreshold = -5;
+        List<Point> outlierPoints = new();
+        foreach(var pt in allEdgePoints)
         {
-            edges.CopyTo(closed);
+            double dist = (a * pt.X + b * pt.Y + c) / denom;
+            if(dist < distanceThreshold)
+            {
+                outlierPoints.Add(pt);
+            }    
         }
+
+        Mat imgSmall = new();
+        Cv2.CvtColor(gray, imgSmall, ColorConversionCodes.GRAY2BGR);
+        if(Math.Abs(b) > 0.01)
+        {
+            Point p1 = new(0, (int)(-c / b));
+            Point p2 = new(imgSmall.Cols, (int)(-(a * imgSmall.Cols + c) / b));
+            Cv2.Line(imgSmall, p1, p2, new Scalar(0, 0, 255), 2);
+        }    
+
+        if(outlierPoints.Count>0)
+        {
+            int offSetRoi = 50;
+            Rect roiTarget = Cv2.BoundingRect(outlierPoints);
+            int xRoiTarget = Math.Max(0, roiTarget.X - offSetRoi);
+            int yRoiTarget = Math.Max(0, roiTarget.Y - offSetRoi);
+            int widthRoiTarget = Math.Min(gray.Width - roiTarget.Width, roiTarget.Width + offSetRoi * 2);
+            int heightRoiTarget = Math.Min(gray.Height - roiTarget.Height,  roiTarget.Height + offSetRoi * 2);
+            Rect roiTargetNew = new(xRoiTarget, yRoiTarget, widthRoiTarget, heightRoiTarget);
+            if (roiTarget.Width < gray.Width*0.5)
+            {
+                Cv2.Rectangle(imgSmall, roiTargetNew, new Scalar(0, 255, 0), 2);
+                Dbg.Show(edges, "Canny");
+                Dbg.Show(imgSmall, "Done");
+                
+            }    
+        }    
+
+
+        //Rect roiTaget = Cv2.BoundingRect(outlierPoints);
+        //Cv2.Rectangle(imgSmall, roiTaget, new Scalar(0, 255, 0), 2);
+     
+        //Dbg.Show(imgSmall, "Img_Find_Contour");
+
+
+        
+
+
+        // Crop duoi phai
+        Rect imgAreaDuoiPhai = new(bottomRight.X- roiW, bottomRight.Y- roiH, roiW, roiH);
+        Mat imgDuoiPhai = new(src, imgAreaDuoiPhai);
+        Dbg.Show(imgDuoiPhai, "Img_Duoi_Phai");
+
+        //Crop duoi trai
+        Rect imgAreaDuoiTrai = new(bottomLeft.X, bottomLeft.Y - roiH - paddingHeight, roiW, roiH);
+        Mat imgDuoiTrai = new(src, imgAreaDuoiTrai);
+        Dbg.Show(imgDuoiTrai, "Img_Duoi_Trai");
+        Mat cropImg = new(); 
+
+
         var cropping = new Mat();
-        return cropping;
+        return cropImg;
     }
 
-
+    
     /// <summary>Sắp 4 đỉnh theo thứ tự: trên-trái, trên-phải, dưới-phải, dưới-trái.</summary>
     private static Point2f[] OrderCorners(Point2f[] pts)
     {
