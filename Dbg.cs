@@ -116,12 +116,12 @@ public static class Dbg
 
         if (pause ?? Pause)
         {
-            Console.WriteLine("     (bấm phím bất kỳ để tiếp, Esc/q để chạy thẳng)");
+            Console.WriteLine("     (Bam phim bat ky, Esc/q de chay thang)");
             int key = Cv2.WaitKey(0);
             if (key == 27 || key == 'q' || key == 'Q')
             {
                 Enabled = false;
-                Console.WriteLine("     -> đã tắt debug, chạy thẳng đến hết.");
+                Console.WriteLine("     -> Da tat debug, chay den het.");
             }
         }
         else
