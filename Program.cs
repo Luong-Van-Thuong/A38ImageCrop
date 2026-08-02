@@ -1,6 +1,7 @@
 using OpenCvSharp;
 using OpenCvSharp.XImgProc;
 using OpenCvSharp.XPhoto;
+using System.Runtime.Intrinsics.X86;
 
 namespace A38.ImageCrop;
 
@@ -297,7 +298,7 @@ public static class Program
             Cv2.CvtColor(imgTrenPhai, gray, ColorConversionCodes.BGRA2GRAY);
         else
             gray = imgTrenPhai.Clone();
-
+        Dbg.Show(imgTrenPhai, "Img raw");
         // 3. Blur + Canny (Dùng biến edges riêng biệt)
         Mat blurred = new();
         Cv2.GaussianBlur(gray, blurred, new Size(5, 5), 0);
@@ -307,31 +308,29 @@ public static class Program
 
         // 4. XÓA VIỀN RÁC BẰNG MARGIN (Xóa hẳn 15px sát mép để triệt hạ nhiễu góc)
         int margin = 15;
-        Cv2.Rectangle(edges, new Rect(0, 0, edges.Width, edges.Height), new Scalar(0), 2);
-
-        Mat kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(5, 5));
-        Mat imgDilate = new();
-        Cv2.Dilate(edges, imgDilate, kernel);
-        Dbg.Show(edges, "Dilate");
-        LineSegmentPoint[] linePointSeg = Cv2.HoughLinesP(
-            edges, 
-            rho: 1, 
-            theta: Math.PI/180, 
-            threshold: 50, 
-            minLineLength: 50, 
-            maxLineGap: 10
-        );
 
         List<Point> allEdgePoints = new();
-        if(linePointSeg.Length > 0)
+        for(int m = 0;m < edges.Rows; m++)
         {
-            foreach (var seg in linePointSeg)
+            for (int n = 0; n < edges.Cols; n++)
             {
-                allEdgePoints.Add(seg.P1);
-                allEdgePoints.Add(seg.P2);
+                if (edges.At<byte>(m, n) > 0)
+                {
+                    allEdgePoints.Add(new Point (n,m));
+                }
             }
         }
+        if (allEdgePoints.Count < 10) return null;
+        // Line thô lần 1
+        Line2D lineRaw = Cv2.FitLine(allEdgePoints, DistanceTypes.Fair, 0, 0.01, 0.01);
+        double a1 = -lineRaw.Vy;
+        double a2 = lineRaw.Vx;
+        double c1 = -(a1*lineRaw.X1 + a2*lineRaw.Y1);
+        double demo1 = Math.Sqrt(a1 * a1 + a2 * a2);
 
+        // Lọc bỏ khối nhô bất thường 
+        List<Point> listPointClear = new();
+        double outlierCutoff = 15;
 
         Line2D line = Cv2.FitLine(allEdgePoints, DistanceTypes.Fair, 0, 0.01, 0.01);
         double a = -line.Vy;
