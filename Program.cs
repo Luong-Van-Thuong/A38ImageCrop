@@ -1,6 +1,8 @@
 using OpenCvSharp;
 using OpenCvSharp.XImgProc;
 using OpenCvSharp.XPhoto;
+using System.Net.WebSockets;
+using System.Runtime.Intrinsics.X86;
 
 namespace A38.ImageCrop;
 
@@ -38,6 +40,57 @@ public static class Config
     /// (dotnet run -- "duong_dan.jpg"), hoặc tự tạo sample.png nếu không có gì cả.
     /// </summary>
     public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-35-18.bmp";
+}
+
+/// <summary>
+/// Tham số riêng cho bước TÌM PHẦN NHÔ RA (top-hat).
+/// Tách riêng khỏi Config để bạn biết chỗ nào chỉnh cho việc gì.
+/// </summary>
+public static class ProtrusionCfg
+{
+    // ===== Đèn báo mask có ổn không =====
+    // Đo bằng: (số pixel trắng của mask) / (tổng số pixel ROI).
+    // ROI góc trên-phải của con hàng này vật thể chiếm khoảng 30-45%.
+    // In ra 0.5% hay 99% nghĩa là mask hỏng -> đừng debug tiếp các bước sau, sửa mask trước.
+    public static double MinObjectRatio = 0.05;
+    public static double MaxObjectRatio = 0.97;
+
+    // ===== THAM SỐ QUAN TRỌNG NHẤT =====
+    // Bán kính (pixel) của cái đĩa dùng để "lăn" bên trong mask.
+    // Quy tắc: r phải LỚN HƠN nửa bề rộng phần nhô ra,
+    //          nhưng NHỎ HƠN nửa bề rộng chỗ hẹp nhất của thân vật thể.
+    //   - r quá nhỏ  -> đĩa lọt vào cả phần nhô -> opening giữ nguyên nó -> residual rỗng -> MISS
+    //   - r quá lớn  -> đĩa không lọt vào cả thân -> thân cũng bị bào -> residual đầy rác
+    // Cụm nhô ở ROI này đo được cỡ 150x170 px, nên r=40 (giá trị trong test.cs) là QUÁ NHỎ.
+    // Chạy Program.SweepDiskRadius() để quét và tự tìm số đúng.
+    public static int DiskRadius = 80;
+
+    // Opening với đĩa lớn rất chậm (độ phức tạp tăng theo r^2).
+    // Thu nhỏ ảnh xuống rồi mới opening -> nhanh hơn nhiều, sai số vài pixel không đáng kể.
+    // Đặt 1.0 để tắt tối ưu này (chạy ở độ phân giải gốc, chính xác nhất nhưng chậm).
+    public static double OpenDownScale = 0.5;
+
+    // ===== Bộ lọc ứng viên =====
+    // Tính theo tỉ lệ diện tích ROI, KHÔNG hardcode số pixel,
+    // để đổi kích thước ROI hay đổi độ phân giải camera vẫn dùng lại được.
+    public static double MinAreaRatio = 0.0005;  // nhỏ hơn -> coi là nhiễu
+    public static double MaxAreaRatio = 0.20;    // lớn hơn -> chắc chắn đã ăn nhầm cả thân
+
+    // Tỉ lệ cạnh dài / cạnh ngắn của minAreaRect.
+    // Phần nhô ra thường thuôn dài; hình gần vuông (aspect ~1) thường là mảng bị bào nhầm.
+    public static double MinAspect = 1.1;
+    public static double MaxAspect = 10.0;
+
+    // Ứng viên phải DÍNH vào thân vật thể, không được là mảnh trôi nổi.
+    // Giãn ứng viên ra bấy nhiêu pixel rồi xem có chạm thân không.
+    public static int TouchDilate = 5;
+
+    // Bỏ ứng viên nằm sát mép ROI: đó thường là chỗ vật thể bị khung ROI cắt cụt,
+    // không phải phần nhô thật. Đây cũng là cái cứu ta khi r lớn làm chóp nhọn của thân lòi ra.
+    public static int BorderMargin = 3;
+
+    // Nới rộng bbox trả về, để lát nữa cắt ảnh còn thấy được ngữ cảnh xung quanh.
+    public static int BboxPadding = 20;
 }
 
 public static class Program
@@ -80,19 +133,29 @@ public static class Program
         Dbg.Reset();
 
         // ---- Chạy pipeline ----------------------------------------------------
+        // Giai đoạn 1: dò và cắt vùng lớn nhất (cả con hàng) ra khỏi ảnh gốc.
         using var result = CropLargestRegion(src);
-        using var imgTrenTrai = CropSmallRegion(result);
-        if (result!=null)
-        {
-            
-        }    
-        
+
+        // >>> SỬA LỖI: câu check null này PHẢI đứng TRƯỚC lời gọi CropSmallRegion.
+        // Code cũ gọi CropSmallRegion(result) trong khi result vẫn có thể là null,
+        // rồi mới check ở dưới -> chương trình chết vì NullReferenceException
+        // ngay tại dòng "int w = src.Width;" bên trong CropSmallRegion.
+        // Nguyên tắc: kiểm tra null NGAY SAU khi nhận giá trị, trước mọi lần dùng nó.
         if (result is null || result.Empty())
         {
             Console.WriteLine("KHÔNG dò được vùng nào. Thử giảm Config.CannyLow hoặc Config.MinAreaRatio.");
             Dbg.CloseAll();
             return 2;
         }
+
+        // Giai đoạn 2: từ ảnh đã cắt, soi các góc để tìm phần nhô ra.
+        // Trả về null nghĩa là không tìm thấy — không phải lỗi chương trình,
+        // nên chỉ in cảnh báo rồi vẫn ghi kết quả giai đoạn 1 ra file.
+        using var imgPhanNho = CropSmallRegion(result);
+        if (imgPhanNho is null)
+            Console.WriteLine("Chưa bắt được phần nhô ra. Xem dòng log 'ratio mask' và ảnh 5_Residual để biết kẹt ở đâu.");
+        else
+            Console.WriteLine($"Đã bắt được phần nhô ra: {imgPhanNho.Width}x{imgPhanNho.Height}");
 
         Directory.CreateDirectory("output");
         var outPath = Path.Combine("output",
@@ -130,20 +193,20 @@ public static class Program
         // Tý thử đổi về 0 hoặc các cái khác xem nó biến đổi ảnh như thế nào  ------------
 
         Cv2.CvtColor(work, gray, ColorConversionCodes.BGR2GRAY);
-        Dbg.Show(gray, "gray");
+        //Dbg.Show(gray, "gray");
 
         // --- B3: làm mờ để bớt nhiễu, tránh Canny bắt phải hạt nhiễu.
         using var blur = new Mat();
 
         // Điều chỉnh BlurKernel và BlurKernel sang một số khác thì nó sẽ như nào 
         Cv2.GaussianBlur(gray, blur, new Size(Config.BlurKernel, Config.BlurKernel), 0);
-        Dbg.Show(blur, "blur");
+        //Dbg.Show(blur, "blur");
 
         // --- B4: dò cạnh.
         using var edges = new Mat();
         // Điều chỉnh cạnh CannyLow và CannyHigh sang số kahcs thì nó như nào ảnh tìm được trả về kết quả như nào 
         Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
-        Dbg.Show(edges, "canny");
+        //Dbg.Show(edges, "canny");
         // Mẹo: nonzero% ở dòng stats nói lên nhiều thứ —
         //   quá thấp (<0.5%) = ngưỡng cao quá, cạnh biến mất
         //   quá cao (>15%)   = ngưỡng thấp quá, toàn nhiễu
@@ -188,10 +251,10 @@ public static class Program
             hsvPixel.Dispose();
             bgrPixel.Dispose();
         }
-        Dbg.Show(imgContours, "imgContours");
+        //Dbg.Show(imgContours, "imgContours");
 
 
-        Dbg.Log($"tim duoc {contours.Length} contour");
+        //Dbg.Log($"tim duoc {contours.Length} contour");
 
         double imageArea = work.Width * (double)work.Height;
         var candidates = contours
@@ -203,10 +266,27 @@ public static class Program
         Dbg.Log($"còn {candidates.Count} contour sau khi lọc diện tích " +
                 $"(>= {Config.MinAreaRatio:P0} ảnh = {imageArea * Config.MinAreaRatio:0} px)");
 
-        foreach (var (_, area) in candidates.Take(5))
-            Dbg.Log($"  - diện tích {area:0} px ({area / imageArea:P1} ảnh)");
-
+        // >>> SỬA LỖI (loại nguy hiểm: vẫn COMPILE SẠCH, không một warning nào).
+        // Code cũ:
+        //     foreach (var (_, area) in candidates.Take(5))
+        //         //Dbg.Log(...);              <- thân vòng lặp bị comment mất
+        //
+        //     if (candidates.Count == 0) return null;
+        //
+        // C# không bắt buộc { } cho thân vòng lặp, nên khi bạn comment mất dòng Dbg.Log,
+        // trình biên dịch lấy luôn CÂU LỆNH KẾ TIẾP làm thân -> câu "if ... return null"
+        // bị hút vào trong vòng lặp.
+        // Hậu quả ngược đời: return null chỉ chạy khi candidates CÓ phần tử (lúc không cần),
+        // còn khi candidates RỖNG thì vòng lặp không chạy vòng nào -> guard bị bỏ qua
+        // -> xuống dòng candidates[0] bên dưới ném ArgumentOutOfRangeException.
+        //
+        // BÀI HỌC: luôn đặt { } kể cả với thân một dòng. Đây là lỗi kinh điển của C/C++/C#.
         if (candidates.Count == 0) return null;
+
+        foreach (var (_, area) in candidates.Take(5))
+        {
+            Dbg.Log($"  - diện tích {area:0} px ({area / imageArea:P1} ảnh)");
+        }
 
         // Vẽ đè các contour lên ảnh để nhìn xem nó bắt đúng chỗ chưa.
         if (Dbg.Enabled)
@@ -216,7 +296,7 @@ public static class Program
                 new Scalar(0, 255, 0), 2);
             Cv2.DrawContours(overlay, new[] { candidates[0].Contour }, -1,
                 new Scalar(0, 0, 255), 3);   // đỏ = vùng được chọn
-            Dbg.Show(overlay, "contours");
+           // Dbg.Show(overlay, "contours");
         }
 
         var best = candidates[0].Contour;
@@ -235,7 +315,7 @@ public static class Program
             foreach (var c in corners) Dbg.Log($"  góc: ({c.X:0}, {c.Y:0})");
 
             var warped = WarpToRect(src, corners);
-            Dbg.Show(warped, "result_warp");
+            //Dbg.Show(warped, "result_warp");
             return warped;
         }
         else
@@ -250,158 +330,395 @@ public static class Program
 
             Dbg.Log($"Cat theo hinh chu nhat bao quanh: {full}");
             var cropped = new Mat(src, full).Clone();
-            Dbg.Show(cropped, "result_crop");
+            //Dbg.Show(cropped, "result_crop");
             return cropped;
         }
     }
 
-    // Tìm vị trí của 4 đỉnh trong tứ giác xem đỉnh nào có viền giống hình tứ giác nhỏ bị nghiêng khoảng 45 độ rồi cắt ảnh 
+    /// <summary>
+    /// Từ ảnh đã cắt (cả con hàng), soi góc TRÊN-PHẢI để tìm phần nhô ra rồi cắt nó.
+    /// Trả về null nếu không tìm thấy (KHÔNG phải lỗi — cứ đọc log để biết kẹt ở bước nào).
+    ///
+    /// MẠCH CHÍNH, nhớ đúng thứ tự này:
+    ///   ảnh màu -> xám -> làm mờ -> nhị phân (Otsu) -> lấp lỗ -> giữ blob to nhất
+    ///           -> opening bằng đĩa -> TRỪ đi -> lọc ứng viên -> ra bbox
+    /// </summary>
     public static Mat? CropSmallRegion(Mat src)
     {
+        Dbg.Show(src, "0_AnhDaCat");
 
-        List<Mat> imgCuonDay = new();
-
-        Dbg.Show(src, "img lage sau khi crop");
-
-        // Tim vi tri cac diem cac toa do cac dinh 
         int w = src.Width;
         int h = src.Height;
         int roiW = 500;
         int roiH = 500;
-        int paddingHeight = 100;
-        Point topLeft = new(0, 0);
+
         Point topRight = new(w - 1, 0);
-        Point bottomLeft = new(0, h - 1);
-        Point bottomRight = new(w - 1, h - 1);
 
+        // ================================================================
+        //  CẮT ROI GÓC TRÊN-PHẢI
+        // ================================================================
+        // >>> SỬA LỖI: phải CLAMP (giao với khung ảnh) trước khi cắt.
+        // Toán tử & giữa hai Rect trong OpenCvSharp = phép giao (intersection).
+        // Thiếu bước này, nếu ảnh cắt được nhỏ hơn 500px thì new Mat(src, rect)
+        // ném exception ngay, vì rect thò ra ngoài biên ảnh.
+        Rect areaTrenPhai = new Rect(topRight.X - roiW, topRight.Y + 50, roiW, roiH)
+                            & new Rect(0, 0, src.Width, src.Height);
 
+        if (areaTrenPhai.Width < 50 || areaTrenPhai.Height < 50)
+        {
+            Dbg.Log($"ROI tren-phai qua nho sau khi clamp: {areaTrenPhai}");
+            return null;
+        }
 
-        // Crop 4 hình chữ nhật nhỏ ở 4 góc của ảnh lớn 
+        // using = tự gọi Dispose khi ra khỏi hàm. Mat giữ bộ nhớ ngoài vùng quản lý của GC,
+        // quên using là rò bộ nhớ. Ảnh 40MB mà chạy vòng lặp nhiều file là hết RAM ngay.
+        using Mat imgTrenPhai = new(src, areaTrenPhai);
+        Dbg.Show(imgTrenPhai, "1_ROI_raw");
 
-        // Crop tren trai
-        Rect imgAreaTrenTrai = new(topLeft.X, topLeft.Y, roiW, roiH);
-        Mat imgTrenTrai = new(src, imgAreaTrenTrai);
-        Dbg.Show(imgTrenTrai, "Img_Tren_Trai");
-        // Kiem tra xem trong img co blob nao co hinh dang hinh chu nhat hay khong 
+        // ================================================================
+        //  BƯỚC 1: chuyển xám
+        // ================================================================
+        // Mọi thuật toán nhị phân / morphology đều làm việc trên ảnh 1 kênh.
+        using Mat gray = ToGray(imgTrenPhai);
 
-
-        // Crop tren phai
-        Rect imgAreaTrenPhai = new(topRight.X- roiW, topRight.Y + 50, roiW, roiH);
-        Mat imgTrenPhai = new(src, imgAreaTrenPhai);
-
-        // 2. Chuyển xám chuẩn 1 kênh (Bảo vệ code không crash)
-        Mat gray = new();
-        if (imgTrenPhai.Channels() == 3)
-            Cv2.CvtColor(imgTrenPhai, gray, ColorConversionCodes.BGR2GRAY);
-        else if (imgTrenPhai.Channels() == 4)
-            Cv2.CvtColor(imgTrenPhai, gray, ColorConversionCodes.BGRA2GRAY);
-        else
-            gray = imgTrenPhai.Clone();
-
-        // 3. Blur + Canny (Dùng biến edges riêng biệt)
-        Mat blurred = new();
+        // ================================================================
+        //  BƯỚC 2: làm mờ
+        // ================================================================
+        // Xoá hạt nhiễu để Otsu không bị mấy pixel lạc lõng kéo lệch ngưỡng.
+        // Kernel phải là số LẺ. Càng lớn càng mịn nhưng biên càng bị "nhoè" ra.
+        using Mat blurred = new();
         Cv2.GaussianBlur(gray, blurred, new Size(5, 5), 0);
 
-        Mat edges = new();
-        Cv2.Canny(blurred, edges, 100, 200);
+        // ================================================================
+        //  BƯỚC 3: nhị phân bằng Otsu   *** CHỖ SỬA QUAN TRỌNG NHẤT ***
+        // ================================================================
+        // Otsu tự tìm ngưỡng tối ưu, bạn không phải hardcode con số nào.
+        //
+        // Vật thể của bạn TỐI (xanh đậm) nằm trên nền SÁNG (trắng):
+        //   ThresholdTypes.Binary    : pixel SÁNG hơn ngưỡng -> 255
+        //                              => NỀN thành 255, vật thể thành 0     (SAI)
+        //   ThresholdTypes.BinaryInv : pixel TỐI  hơn ngưỡng -> 255
+        //                              => VẬT THỂ thành 255                  (ĐÚNG)
+        //
+        // Toàn bộ OpenCV quy ước 255 = tiền cảnh (thứ ta quan tâm), 0 = nền.
+        // Đặt sai chỗ này thì FindContours/Open/Subtract đều đi xử lý cái NỀN.
+        // Đúng là lỗi cũ của bạn: ảnh debug "vung tim" tô trắng tam giác nền
+        // ở góc trên-phải, còn vật thể thì đen -> residual tất nhiên rỗng.
+        //
+        // MẸO nếu sau này gặp ảnh ngược sáng (vật sáng / nền tối): đổi về Binary.
+        // Cách tự động: so độ sáng trung bình 4 góc ảnh với trung bình toàn ảnh.
+        using var mask = new Mat();
+        Cv2.Threshold(blurred, mask, 0, 255, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
+        Dbg.Show(mask, "2_Threshold");   // ★ KIỂM TRA: vật thể phải TRẮNG, nền phải ĐEN
 
-        // 4. XÓA VIỀN RÁC BẰNG MARGIN (Xóa hẳn 15px sát mép để triệt hạ nhiễu góc)
-        int margin = 15;
-        Cv2.Rectangle(edges, new Rect(0, 0, edges.Width, edges.Height), new Scalar(0), 2);
+        // ================================================================
+        //  BƯỚC 4: closing — vá khe nứt và lỗ nhỏ bên trong vật thể
+        // ================================================================
+        // Closing = giãn (dilate) rồi co (erode). Nó bịt các lỗ/khe NHỎ HƠN kernel
+        // mà không làm vật thể phình to ra.
+        // Dùng Ellipse chứ đừng dùng Rect: hình tròn không thiên vị hướng nào,
+        // nên kết quả không đổi khi vật thể đặt nghiêng.
+        using var k5 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5));
+        Cv2.MorphologyEx(mask, mask, MorphTypes.Close, k5, iterations: 2);
+        Dbg.Show(mask, "3_Closed");
 
-        Mat kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(5, 5));
-        Mat imgDilate = new();
-        Cv2.Dilate(edges, imgDilate, kernel);
-        Dbg.Show(edges, "Dilate");
-        LineSegmentPoint[] linePointSeg = Cv2.HoughLinesP(
-            edges, 
-            rho: 1, 
-            theta: Math.PI/180, 
-            threshold: 50, 
-            minLineLength: 50, 
-            maxLineGap: 10
-        );
+        // ================================================================
+        //  BƯỚC 5: giữ blob to nhất + lấp kín ruột
+        // ================================================================
+        // >>> SỬA LỖI: đã BỎ HẲN BuildSolidMask ở đây.
+        //
+        // BuildSolidMask sinh ra để xử lý ảnh ĐƯỜNG VIỀN (Canny): nó floodfill từ nền
+        // rồi đảo ngược để suy ra phần ruột. Giờ đầu vào đã là ảnh nhị phân ĐẶC rồi,
+        // floodfill không còn việc gì để làm.
+        //
+        // Tệ hơn, nó còn phá hoại: vật thể trong ROI này CHẠM MÉP ảnh. Hàm đó
+        // CopyMakeBorder thêm một vòng viền 1px toàn số 0 quanh ảnh — vòng viền đó
+        // trở thành CÂY CẦU nối từ góc (0,0) vòng quanh rồi chui thẳng vào ruột vật thể
+        // qua chỗ chạm mép. FloodFill tràn vào trong -> mask chỉ còn mấy sợi chỉ.
+        // (Chính là ảnh debug 24_SolidMask.png hôm nay của bạn.)
+        //
+        // LargestFilled làm đúng việc cần và đơn giản hơn nhiều:
+        // FindContours(External) chỉ trả về đường biên NGOÀI cùng, vẽ lại nó với
+        // thickness = -1 (tô đặc) là vừa bỏ được blob rác vừa lấp kín ruột, một công đôi việc.
+        using Mat objMask = LargestFilled(mask);
+        Dbg.Show(objMask, "4_ObjMask");
 
-        List<Point> allEdgePoints = new();
-        if(linePointSeg.Length > 0)
+        // ================================================================
+        //  BƯỚC 6: sanity check — cái đèn báo
+        // ================================================================
+        // >>> SỬA LỖI: phải đo trên objMask, tức đúng cái Mat sẽ dùng ở bước sau.
+        // Code cũ đo trên solidMask (≈ vùng nền) nên ratio ra ~60% và LỌT QUA check,
+        // trong khi mask thực chất đã hỏng. Đèn báo đo nhầm chỗ còn tệ hơn không có đèn:
+        // nó khiến bạn tin tưởng rồi đi tìm lỗi ở bước sau, sai chỗ hoàn toàn.
+        double roiArea = (double)objMask.Rows * objMask.Cols;
+        double ratio = Cv2.CountNonZero(objMask) / roiArea;
+        Dbg.Log($"ratio mask = {ratio:P1}   (kỳ vọng ~30-45% cho ROI góc trên-phải)");
+
+        if (ratio < ProtrusionCfg.MinObjectRatio || ratio > ProtrusionCfg.MaxObjectRatio)
         {
-            foreach (var seg in linePointSeg)
+            Dbg.Log("=> MASK HỎNG. Mở ảnh 2_Threshold xem có bị đảo trắng/đen không.");
+            return null;
+        }
+
+        // ================================================================
+        //  BƯỚC 7: TOP-HAT — tách phần nhô ra khỏi thân
+        // ================================================================
+        // Đây là trái tim của thuật toán. Hình dung thế này:
+        //
+        //   Lăn một cái ĐĨA bán kính r khắp bên trong vùng trắng.
+        //   opening = tập hợp tất cả những chỗ mà đĩa CHẠM TỚI được.
+        //     - Thân vật thể to  -> đĩa lăn thoải mái  -> opening giữ nguyên
+        //     - Phần nhô mảnh    -> đĩa không lọt vào  -> opening xoá sạch
+        //
+        //   residual = mask - opening  =  đúng phần đĩa không với tới  =  phần nhô ra.
+        //
+        // Tên gọi chính thức: white top-hat transform.
+        //
+        // VÌ SAO DÙNG ĐĨA TRÒN (BuildDisk) mà không dùng Rect/Cross:
+        // chỉ hình tròn mới đối xứng xoay hoàn toàn. Nhờ vậy kết quả KHÔNG ĐỔI
+        // dù con hàng đặt nghiêng bao nhiêu độ — đúng cái bạn cần vì vị trí bất định.
+        // Đây cũng là lý do cách này hơn hẳn FitLine: FitLine giả định biên là
+        // đường THẲNG, sai ngay khi biên cong hoặc có nhiều phần nhô.
+        using var opened = OpenWithDisk(objMask, ProtrusionCfg.DiskRadius, ProtrusionCfg.OpenDownScale);
+        Dbg.Show(opened, "5_Opened");    // ★ KIỂM TRA: thân còn nguyên, cụm nhô đã BIẾN MẤT
+
+        using var residual = new Mat();
+        // THỨ TỰ THAM SỐ QUAN TRỌNG: objMask trước, opened sau.
+        // Cv2.Subtract là phép trừ có bão hoà (kết quả âm bị kẹp về 0),
+        // nên đảo ngược hai tham số sẽ ra ảnh rỗng hoàn toàn chứ không báo lỗi gì.
+        Cv2.Subtract(objMask, opened, residual);
+        Dbg.Show(residual, "6_Residual");
+
+        // ================================================================
+        //  BƯỚC 8: lọc ứng viên trong residual
+        // ================================================================
+        // Residual còn lẫn rác: chóp nhọn của thân bị bào, viền răng cưa, đốm nhiễu.
+        // PickProtrusion lọc bằng 4 tiêu chí, đọc chi tiết trong hàm đó.
+        Rect? found = PickProtrusion(residual, opened, objMask.Size(), roiArea);
+
+        if (found is null)
+        {
+            Dbg.Log("Không ứng viên nào qua được bộ lọc.");
+            Dbg.Log("=> Mở ảnh 6_Residual xem có gì không:");
+            Dbg.Log("   - Residual RỖNG        -> DiskRadius quá NHỎ, tăng lên");
+            Dbg.Log("   - Residual đầy rác     -> DiskRadius quá LỚN, giảm xuống");
+            Dbg.Log("   - Residual đúng chỗ    -> bộ lọc quá chặt, nới MinAreaRatio/MinAspect");
+            Dbg.Log("   Hoặc gọi Program.SweepDiskRadius(imgTrenPhai) để quét tự động.");
+            return null;
+        }
+
+        Rect box = found.Value;
+
+        // ---------- Vẽ overlay để mắt người kiểm tra ----------
+        // Bước này không ảnh hưởng kết quả, nhưng đừng bỏ: nhìn 1 giây
+        // biết ngay đúng/sai, nhanh hơn đọc log rất nhiều.
+        using (Mat vis = imgTrenPhai.Clone())
+        {
+            Cv2.Rectangle(vis, box, new Scalar(0, 255, 0), 2);
+            Cv2.PutText(vis, $"{box.Width}x{box.Height}",
+                        new Point(box.X, Math.Max(14, box.Y - 6)),
+                        HersheyFonts.HersheySimplex, 0.6, new Scalar(0, 255, 0), 2);
+            Dbg.Show(vis, "7_KetQua");
+        }
+
+        Dbg.Log($"TÌM THẤY phần nhô ra tại (toạ độ trong ROI): {box}");
+
+        // Trả về ảnh MÀU của phần nhô, cắt từ ROI.
+        // .Clone() là bắt buộc: new Mat(src, rect) chỉ tạo một "cửa sổ nhìn" dùng chung
+        // bộ nhớ với src. Không Clone thì khi src bị Dispose, Mat trả về thành rác.
+        return new Mat(imgTrenPhai, box).Clone();
+    }
+
+    /// <summary>
+    /// Chọn ứng viên tốt nhất trong ảnh residual.
+    /// </summary>
+    /// <param name="residual">ảnh top-hat (mask - opening)</param>
+    /// <param name="body">phần thân (chính là ảnh opening), dùng để kiểm tra ứng viên có dính thân không</param>
+    /// <param name="roiSize">kích thước ROI, để biết đâu là mép</param>
+    /// <param name="roiArea">diện tích ROI, để quy các ngưỡng về tỉ lệ</param>
+    private static Rect? PickProtrusion(Mat residual, Mat body, Size roiSize, double roiArea)
+    {
+        // FindContours SỬA TRỰC TIẾP ảnh đầu vào -> luôn truyền bản Clone,
+        // nếu không thì residual bị phá và những lần Dbg.Show sau sẽ thấy ảnh sai.
+        using var work = residual.Clone();
+        Cv2.FindContours(work, out Point[][] cnts, out _,
+                         RetrievalModes.External, ContourApproximationModes.ApproxNone);
+
+        if (cnts is null || cnts.Length == 0)
+        {
+            Dbg.Log("PickProtrusion: residual rỗng, không có contour nào.");
+            return null;
+        }
+
+        double minArea = roiArea * ProtrusionCfg.MinAreaRatio;
+        double maxArea = roiArea * ProtrusionCfg.MaxAreaRatio;
+
+        Rect? best = null;
+        double bestScore = double.MinValue;
+        int loaiDienTich = 0, loaiAspect = 0, loaiMep = 0, loaiKhongDinh = 0;
+
+        foreach (var c in cnts)
+        {
+            // --- Lọc 1: diện tích ---
+            double area = Cv2.ContourArea(c);
+            if (area < minArea || area > maxArea) { loaiDienTich++; continue; }
+
+            // --- Lọc 2: hình dạng, đo bằng minAreaRect ---
+            // BẮT BUỘC dùng MinAreaRect (hình chữ nhật XOAY ôm sát nhất), KHÔNG dùng
+            // BoundingRect (hình chữ nhật thẳng trục). Một thanh dài đặt nghiêng 45 độ
+            // cho BoundingRect gần vuông (aspect ~1) -> lọc sẽ loại nhầm.
+            // MinAreaRect cho ra kích thước thật, không phụ thuộc góc đặt.
+            RotatedRect rr = Cv2.MinAreaRect(c);
+            double canhNgan = Math.Min(rr.Size.Width, rr.Size.Height);
+            double canhDai = Math.Max(rr.Size.Width, rr.Size.Height);
+            if (canhNgan < 1) { loaiAspect++; continue; }
+
+            double aspect = canhDai / canhNgan;
+            if (aspect < ProtrusionCfg.MinAspect || aspect > ProtrusionCfg.MaxAspect)
             {
-                allEdgePoints.Add(seg.P1);
-                allEdgePoints.Add(seg.P2);
+                loaiAspect++;
+                continue;
+            }
+
+            // --- Lọc 3: bỏ ứng viên sát mép ROI ---
+            // Sát mép thường là chỗ vật thể bị khung ROI cắt cụt, không phải phần nhô thật.
+            // Đây cũng là cái cứu ta khi DiskRadius để lớn: chóp nhọn của thân bị bào
+            // sẽ lòi ra trong residual, nhưng nó nằm sát mép nên bị loại ở đây.
+            Rect br = Cv2.BoundingRect(c);
+            int m = ProtrusionCfg.BorderMargin;
+            if (br.X <= m || br.Y <= m ||
+                br.Right >= roiSize.Width - m || br.Bottom >= roiSize.Height - m)
+            {
+                loaiMep++;
+                continue;
+            }
+
+            // --- Lọc 4: phải DÍNH vào thân ---
+            // Phần nhô ra thì theo định nghĩa phải mọc từ thân. Đốm trắng lơ lửng giữa
+            // nền là nhiễu. Cách kiểm tra: giãn ứng viên ra vài pixel rồi AND với thân,
+            // còn pixel nào chung là có dính.
+            if (!DinhVaoThan(c, body, roiSize, ProtrusionCfg.TouchDilate))
+            {
+                loaiKhongDinh++;
+                continue;
+            }
+
+            // --- Chấm điểm ---
+            // Ưu tiên vùng vừa TO vừa NHÔ XA (canhDai lớn). Nếu sau này bắt nhầm,
+            // đây là chỗ đầu tiên nên chỉnh — ví dụ đổi thành area thuần,
+            // hoặc cộng thêm khoảng cách từ trọng tâm tới tâm ROI.
+            double score = area * canhDai;
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = NoiRongRect(br, ProtrusionCfg.BboxPadding, roiSize);
             }
         }
 
+        // Log này quý lắm: nó nói CHÍNH XÁC bộ lọc nào đang giết ứng viên của bạn,
+        // khỏi phải đoán mò.
+        Dbg.Log($"PickProtrusion: {cnts.Length} contour -> loại vì " +
+                $"diện tích={loaiDienTich}, aspect={loaiAspect}, sát mép={loaiMep}, không dính thân={loaiKhongDinh}" +
+                $" -> còn lại: {(best is null ? "KHÔNG CÓ" : best.Value.ToString())}");
 
-        Line2D line = Cv2.FitLine(allEdgePoints, DistanceTypes.Fair, 0, 0.01, 0.01);
-        double a = -line.Vy;
-        double b = line.Vx;
-        double c = -(a * line.X1 + b * line.Y1);
-        double denom = Math.Sqrt(a * a + b * b);
+        return best;
+    }
 
-        double distanceThreshold = -5;
-        List<Point> outlierPoints = new();
-        foreach(var pt in allEdgePoints)
+    /// <summary>Ứng viên có dính vào thân vật thể không.</summary>
+    private static bool DinhVaoThan(Point[] contour, Mat body, Size size, int dilate)
+    {
+        using var m = new Mat(size, MatType.CV_8UC1, Scalar.All(0));
+        Cv2.DrawContours(m, new[] { contour }, -1, Scalar.All(255), -1);
+
+        // Giãn ra vài pixel: sau phép trừ top-hat, ứng viên và thân thường hở nhau
+        // đúng 1-2 pixel ở đường cắt, không giãn thì phép AND ra rỗng và loại oan.
+        using var k = Cv2.GetStructuringElement(
+            MorphShapes.Ellipse, new Size(dilate * 2 + 1, dilate * 2 + 1));
+        Cv2.Dilate(m, m, k);
+
+        using var giao = new Mat();
+        Cv2.BitwiseAnd(m, body, giao);
+        return Cv2.CountNonZero(giao) > 0;
+    }
+
+    /// <summary>Nới rộng rect ra pad pixel mỗi phía, có kẹp trong khung ảnh.</summary>
+    private static Rect NoiRongRect(Rect r, int pad, Size bounds)
+    {
+        // LỖI KINH ĐIỂN cần tránh: tính Width mới bằng "r.Width + 2*pad" rồi mới clamp.
+        // Khi rect nằm sát mép, X bị kẹp về 0 nhưng Width vẫn giữ nguyên -> rect thò ra ngoài.
+        // Cách đúng: đổi sang toạ độ hai góc (x1,y1)-(x2,y2), clamp TỪNG GÓC, rồi trừ ra Width.
+        int x1 = Math.Max(0, r.X - pad);
+        int y1 = Math.Max(0, r.Y - pad);
+        int x2 = Math.Min(bounds.Width, r.Right + pad);
+        int y2 = Math.Min(bounds.Height, r.Bottom + pad);
+        return new Rect(x1, y1, x2 - x1, y2 - y1);
+    }
+
+    /// <summary>
+    /// CÔNG CỤ CHỈNH THAM SỐ — quét DiskRadius để tìm giá trị đúng, khỏi đoán mò.
+    ///
+    /// Cách dùng: trong Main, sau khi có "result", gọi:
+    ///     SweepDiskRadius(result);
+    /// rồi xem log + mở các ảnh sweep_r*_residual trong thư mục debug.
+    ///
+    /// Bán kính ĐÚNG là bán kính mà residual chỉ còn đúng cụm nhô, gọn và sạch.
+    /// Trong log, area nhảy vọt rồi ổn định ở một dải r là dấu hiệu bạn đã vào đúng vùng.
+    /// </summary>
+    public static void SweepDiskRadius(Mat anhDaCat)
+    {
+        int roiW = 500, roiH = 500;
+        Rect area = new Rect(anhDaCat.Width - 1 - roiW, 50, roiW, roiH)
+                    & new Rect(0, 0, anhDaCat.Width, anhDaCat.Height);
+        if (area.Width < 50 || area.Height < 50) { Dbg.Log("SweepDiskRadius: ROI qua nho."); return; }
+
+        using Mat roi = new(anhDaCat, area);
+        using Mat gray = ToGray(roi);
+        using Mat blurred = new();
+        Cv2.GaussianBlur(gray, blurred, new Size(5, 5), 0);
+
+        using var mask = new Mat();
+        Cv2.Threshold(blurred, mask, 0, 255, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
+        using var k5 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5));
+        Cv2.MorphologyEx(mask, mask, MorphTypes.Close, k5, iterations: 2);
+        using Mat objMask = LargestFilled(mask);
+
+        double roiArea = (double)objMask.Rows * objMask.Cols;
+        Dbg.Log("===== QUET DiskRadius =====");
+
+        // Nhớ giá trị cấu hình gốc để trả lại sau khi quét — nếu không,
+        // lần chạy tiếp theo sẽ dùng nhầm giá trị của vòng lặp cuối cùng.
+        int cfgCu = ProtrusionCfg.DiskRadius;
+
+        foreach (int r in new[] { 30, 40, 50, 60, 70, 80, 90, 100, 120, 140 })
         {
-            double dist = (a * pt.X + b * pt.Y + c) / denom;
-            if(dist < distanceThreshold)
-            {
-                outlierPoints.Add(pt);
-            }    
+            using var opened = OpenWithDisk(objMask, r, ProtrusionCfg.OpenDownScale);
+            using var residual = new Mat();
+            Cv2.Subtract(objMask, opened, residual);
+
+            int soPixel = Cv2.CountNonZero(residual);
+            ProtrusionCfg.DiskRadius = r;
+            Rect? hit = PickProtrusion(residual, opened, objMask.Size(), roiArea);
+
+            Dbg.Log($"r={r,4} : residual={soPixel,7} px ({soPixel / roiArea:P2})  ->  " +
+                    (hit is null ? "KHONG BAT DUOC" : $"BAT DUOC {hit.Value}"));
+
+            Dbg.Show(residual, $"sweep_r{r}_residual");
         }
 
-        Mat imgSmall = new();
-        Cv2.CvtColor(gray, imgSmall, ColorConversionCodes.GRAY2BGR);
-        if(Math.Abs(b) > 0.01)
-        {
-            Point p1 = new(0, (int)(-c / b));
-            Point p2 = new(imgSmall.Cols, (int)(-(a * imgSmall.Cols + c) / b));
-            Cv2.Line(imgSmall, p1, p2, new Scalar(0, 0, 255), 2);
-        }    
-
-        if(outlierPoints.Count>0)
-        {
-            int offSetRoi = 50;
-            Rect roiTarget = Cv2.BoundingRect(outlierPoints);
-            int xRoiTarget = Math.Max(0, roiTarget.X - offSetRoi);
-            int yRoiTarget = Math.Max(0, roiTarget.Y - offSetRoi);
-            int widthRoiTarget = Math.Min(gray.Width - roiTarget.Width, roiTarget.Width + offSetRoi * 2);
-            int heightRoiTarget = Math.Min(gray.Height - roiTarget.Height,  roiTarget.Height + offSetRoi * 2);
-            Rect roiTargetNew = new(xRoiTarget, yRoiTarget, widthRoiTarget, heightRoiTarget);
-            if (roiTarget.Width < gray.Width*0.5)
-            {
-                Cv2.Rectangle(imgSmall, roiTargetNew, new Scalar(0, 255, 0), 2);
-                Dbg.Show(edges, "Canny");
-                Dbg.Show(imgSmall, "Done");
-                
-            }    
-        }    
-
-
-        //Rect roiTaget = Cv2.BoundingRect(outlierPoints);
-        //Cv2.Rectangle(imgSmall, roiTaget, new Scalar(0, 255, 0), 2);
-     
-        //Dbg.Show(imgSmall, "Img_Find_Contour");
-
-
-        
-
-
-        // Crop duoi phai
-        Rect imgAreaDuoiPhai = new(bottomRight.X- roiW, bottomRight.Y- roiH, roiW, roiH);
-        Mat imgDuoiPhai = new(src, imgAreaDuoiPhai);
-        Dbg.Show(imgDuoiPhai, "Img_Duoi_Phai");
-
-        //Crop duoi trai
-        Rect imgAreaDuoiTrai = new(bottomLeft.X, bottomLeft.Y - roiH - paddingHeight, roiW, roiH);
-        Mat imgDuoiTrai = new(src, imgAreaDuoiTrai);
-        Dbg.Show(imgDuoiTrai, "Img_Duoi_Trai");
-        Mat cropImg = new(); 
-
-
-        var cropping = new Mat();
-        return cropImg;
+        ProtrusionCfg.DiskRadius = cfgCu;
+        Dbg.Log("===== HET QUET =====");
     }
+
+    /// <summary>Chuyển ảnh về xám 1 kênh, nhận mọi loại đầu vào (1/3/4 kênh).</summary>
+    private static Mat ToGray(Mat src)
+    {
+        var g = new Mat();
+        if (src.Channels() == 3) Cv2.CvtColor(src, g, ColorConversionCodes.BGR2GRAY);
+        else if (src.Channels() == 4) Cv2.CvtColor(src, g, ColorConversionCodes.BGRA2GRAY);
+        else g = src.Clone();
+        return g;
+    }
+
 
     
     /// <summary>Sắp 4 đỉnh theo thứ tự: trên-trái, trên-phải, dưới-phải, dưới-trái.</summary>
@@ -459,4 +776,79 @@ public static class Program
         Console.WriteLine($"Chưa truyền đường dẫn ảnh -> đã tạo ảnh mẫu {path} để chạy thử.");
         return path;
     }
+
+    private static Mat BuildSolidMask(Mat closedEdges)
+    {
+        using var padded = new Mat();
+        Cv2.CopyMakeBorder(closedEdges, padded, 1, 1, 1, 1,
+                           BorderTypes.Constant, Scalar.All(0));
+        using var original = padded.Clone();   // giu lai vong bien
+
+        using var ffMask = new Mat(padded.Rows + 2, padded.Cols + 2,
+                                   MatType.CV_8UC1, Scalar.All(0));
+        Cv2.FloodFill(padded, ffMask, new Point(0, 0), Scalar.All(255),
+                      out _, Scalar.All(0), Scalar.All(0), FloodFillFlags.Link4);
+        // Sau floodFill: nen = 255, ruot vat the = 0, duong bien = 255
+
+        using var interior = new Mat();
+        Cv2.BitwiseNot(padded, interior);      // ruot vat the = 255
+
+        using var full = new Mat();
+        Cv2.BitwiseOr(interior, original, full);   // cong lai vong bien
+
+        return new Mat(full, new Rect(1, 1, closedEdges.Cols, closedEdges.Rows)).Clone();
+    }
+
+    private static Mat OpenWithDisk(Mat mask, int radius, double scale)
+    {
+        if (scale >= 0.999)
+        {
+            using var disk = BuildDisk(radius);
+            var o = new Mat();
+            Cv2.MorphologyEx(mask, o, MorphTypes.Open, disk);
+            return o;
+        }
+
+        int rs = Math.Max(2, (int)Math.Round(radius * scale));
+
+        using var small = new Mat();
+        Cv2.Resize(mask, small, new Size(), scale, scale, InterpolationFlags.Area);
+        Cv2.Threshold(small, small, 127, 255, ThresholdTypes.Binary);
+
+        using var diskSmall = BuildDisk(rs);
+        using var openedSmall = new Mat();
+        Cv2.MorphologyEx(small, openedSmall, MorphTypes.Open, diskSmall);
+
+        var opened = new Mat();
+        Cv2.Resize(openedSmall, opened, mask.Size(), 0, 0, InterpolationFlags.Nearest);
+        Cv2.Threshold(opened, opened, 127, 255, ThresholdTypes.Binary);
+        return opened;
+    }
+
+    /// <summary>Structuring element hinh dia tron (doi xung xoay hoan toan).</summary>
+    private static Mat BuildDisk(int r)
+    {
+        var k = new Mat(2 * r + 1, 2 * r + 1, MatType.CV_8UC1, Scalar.All(0));
+        Cv2.Circle(k, new Point(r, r), r, Scalar.All(255), -1);
+        return k;
+    }
+
+    /// <summary>
+    /// Giu component lon nhat VA lap lo ben trong cung mot luc:
+    /// FindContours(External) chi tra ve bien ngoai, ve lai voi thickness = -1 la duoc mask dac.
+    /// </summary>
+    private static Mat LargestFilled(Mat mask)
+    {
+        using var work = mask.Clone();   // FindContours co the sua source
+        Cv2.FindContours(work, out Point[][] cnts, out _,
+                         RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+
+        var res = new Mat(mask.Size(), MatType.CV_8UC1, Scalar.All(0));
+        if (cnts == null || cnts.Length == 0) return res;
+
+        var biggest = cnts.OrderByDescending(c => Cv2.ContourArea(c)).First();
+        Cv2.DrawContours(res, new[] { biggest }, -1, Scalar.All(255), -1);
+        return res;
+    }
+
 }
