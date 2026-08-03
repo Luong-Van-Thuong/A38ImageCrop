@@ -7,6 +7,44 @@ using System.Runtime.Intrinsics.X86;
 namespace A38.ImageCrop;
 
 /// <summary>
+/// Bốn góc của ảnh đã cắt ở giai đoạn 1 — giai đoạn 2 soi lần lượt từng góc.
+/// Thứ tự khai báo cũng là thứ tự chạy và thứ tự hiện trong log.
+/// </summary>
+public enum Goc
+{
+    TrenTrai,
+    TrenPhai,
+    DuoiPhai,
+    DuoiTrai
+}
+
+/// <summary>
+/// Tham số cắt ROI ở bốn góc (giai đoạn 2).
+/// Các số lệch giữ nguyên theo code cũ: mép trên có dải nền thừa nên phải bỏ 50px,
+/// mép dưới thừa nhiều hơn nên bỏ 100px.
+/// </summary>
+public static class GocCfg
+{
+    // Sử dụng tỷ lệ % (0.2 tương đương 20%)
+    //public static double RoiW = 500;
+    //public static double RoiH = 500;
+
+    public static double RoiW = 0.20;
+    public static double RoiH = 0.20;
+
+    /// <summary>Bỏ bấy nhiêu % tính từ mép TRÊN trước khi cắt ROI hai góc trên.</summary>
+    //public static double LechTren = 50; // 5%
+    public static double LechTren = 0.05; // 5%
+
+    /// <summary>Bỏ bấy nhiêu % tính từ mép DƯỚI trước khi cắt ROI hai góc dưới.</summary>
+    //public static double LechDuoi = 100; // 10%
+    public static double LechDuoi = 0.10; // 10%
+
+    /// <summary>Góc nào cần soi.</summary>
+    public static Goc[] CacGocCanSoi = { Goc.TrenTrai, Goc.TrenPhai, Goc.DuoiPhai, Goc.DuoiTrai };
+}
+
+/// <summary>
 /// Tham số thuật toán — sửa ở đây rồi chạy lại là thấy khác ngay.
 /// Để static (không phải const) để bạn còn sửa được ngay trong lúc debug qua Immediate Window.
 /// </summary>
@@ -39,7 +77,33 @@ public static class Config
     /// không cần truyền tham số dòng lệnh). Để trống ("") thì chương trình sẽ dùng tham số dòng lệnh
     /// (dotnet run -- "duong_dan.jpg"), hoặc tự tạo sample.png nếu không có gì cả.
     /// </summary>
-    public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-35-18.bmp";
+    public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-36-30.bmp";
+
+    /// <summary>
+    /// THƯ MỤC ảnh đầu vào — điền vào đây thì chương trình chạy LẦN LƯỢT TỪNG ẢNH trong đó,
+    /// và <see cref="InputImagePath"/> bị BỎ QUA (muốn quay lại chạy 1 ảnh thì để trống "").
+    /// </summary>
+    public static string InputFolderPath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\img_all\\1";
+
+    /// <summary>Đuôi file được coi là ảnh khi quét thư mục.</summary>
+    public static string[] ImageExtensions = { ".bmp", ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
+
+    /// <summary>Quét cả thư mục con hay chỉ thư mục hiện tại.</summary>
+    public static bool Recursive = false;
+
+    /// <summary>
+    /// Khi chạy cả thư mục: có ghi ảnh từng bước (Dbg.Show) ra đĩa không.
+    /// Mỗi ảnh sinh ra hơn chục file debug, chạy vài trăm ảnh là đầy đĩa và chậm hẳn,
+    /// nên mặc định TẮT. Bật lên khi cần soi kỹ một mẻ nhỏ.
+    /// </summary>
+    public static bool SaveDebugStepsInBatch = false;
+
+    /// <summary>
+    /// Số ảnh chạy CÙNG LÚC khi quét thư mục. Mỗi luồng ôm trọn một XuLyMotAnh.
+    /// Đặt 1 để quay lại chạy tuần tự (dễ đọc log, dễ đặt breakpoint khi debug).
+    /// Đừng đặt cao hơn số nhân CPU: mỗi luồng ngốn vài trăm MB cho ảnh 3648x3648.
+    /// </summary>
+    public static int SoLuong = 4;
 }
 
 /// <summary>
@@ -95,6 +159,45 @@ public static class ProtrusionCfg
 
 public static class Program
 {
+    // ================================================================
+    //  NƠI LƯU ẢNH KẾT QUẢ GIAI ĐOẠN 2
+    // ================================================================
+    // Đừng nhầm với thư mục Dbg.OutDir ("debug_out"): thư mục đó bị Dbg.Reset()
+    // XOÁ SẠCH mỗi lần chạy ảnh mới, chỉ dùng để soi bước trung gian.
+    // Ảnh ở đây là kết quả cần giữ lại nên ghi sang "output" và đặt tên theo ảnh gốc.
+    private static readonly string _outDirG2 = "img_train__";
+
+    //Folder chua anh khong bat duoc phan nho
+    private static readonly string _outDirNotFound = "img_not_found";
+
+    // [ThreadStatic]: bốn luồng chạy bốn ảnh khác nhau cùng lúc, mà tên file lại dựng
+    // từ hai biến này. Để static thường thì luồng B ghi đè _baseName của luồng A giữa chừng
+    // -> ảnh của ảnh A mang tên ảnh B, và bộ đếm nhảy loạn. Lỗi kiểu này không crash,
+    // chỉ ra kết quả sai, nên rất khó phát hiện — phải chặn ngay từ khai báo.
+    [ThreadStatic] private static string? _baseName;
+    [ThreadStatic] private static int _demAnhG2;
+
+    /// <summary>Đặt lại tên gốc + bộ đếm, gọi một lần cho mỗi ảnh đầu vào (trong đúng luồng đó).</summary>
+    private static void ResetLuuAnhG2(string inputPath)
+    {
+        _baseName = Path.GetFileNameWithoutExtension(inputPath);
+        _demAnhG2 = 0;
+    }
+
+    /// <summary>
+    /// Ghi một ảnh của giai đoạn 2 ra thư mục output.
+    /// Tên file có số thứ tự tăng dần nên nhìn thư mục là biết ngay thứ tự tìm ra.
+    /// </summary>
+    private static string LuuAnhG2(Mat img, string nameFolder, string tag)
+    {
+        Directory.CreateDirectory(nameFolder);
+        //var path = Path.Combine(_outDirG2, $"{_baseName ?? "image"}_g2_{++_demAnhG2:00}_{tag}.png");
+        var path = Path.Combine(nameFolder, $"{tag}.png");
+        Cv2.ImWrite(path, img);
+        Dbg.Log($"da luu anh giai doan 2: {path}");
+        return path;
+    }
+
     public static int Main(string[] args)
     {
         // ---- Cấu hình debug ---------------------------------------------------
@@ -103,37 +206,241 @@ public static class Program
         Dbg.Pause = !args.Contains("--no-pause");
         Dbg.SaveFile = true;
 
+        // Chạy cả thư mục mà vẫn muốn xem ảnh từng bước: thêm --debug-steps,
+        // khỏi phải sửa Config rồi build lại. Mỗi ảnh một thư mục con trong debug_out.
+        if (args.Contains("--debug-steps")) Config.SaveDebugStepsInBatch = true;
+
         // Chỉ muốn xem 1 bước? Bỏ comment dòng dưới (hoặc chạy: --only canny)
         // Dbg.Filter = "canny";
         int i = Array.IndexOf(args, "--only");
         if (i >= 0 && i + 1 < args.Length) Dbg.Filter = args[i + 1];
 
-        // ---- Ảnh đầu vào ------------------------------------------------------
-        // Ưu tiên Config.InputImagePath (sửa trong code), rồi tới tham số dòng lệnh,
-        // cuối cùng mới tự tạo ảnh mẫu.
-        var inputPath = !string.IsNullOrWhiteSpace(Config.InputImagePath)
-                        ? Config.InputImagePath
-                        : args.FirstOrDefault(a => !a.StartsWith("--"))
-                          ?? EnsureSampleImage();
-
-        if (!File.Exists(inputPath))
+        // ---- Danh sách ảnh đầu vào -------------------------------------------
+        var danhSachAnh = ThuThapAnhVao(args);
+        if (danhSachAnh.Count == 0)
         {
-            Console.WriteLine($"Không tìm thấy ảnh: {inputPath}");
+            Console.WriteLine("Khong co anh nao de chay. Kiem tra lai Config.InputFolderPath / Config.InputImagePath.");
             return 1;
         }
 
+        // Chạy cả mẻ mà vẫn bật cửa sổ + dừng chờ phím thì mỗi ảnh phải bấm hơn chục lần,
+        // nên tự tắt. Muốn soi từng bước thì để Config.InputFolderPath = "" rồi chạy 1 ảnh.
+        bool chayCaMe = danhSachAnh.Count > 1;
+        if (chayCaMe)
+        {
+            Dbg.ShowWindow = false;
+            Dbg.Pause = false;
+            Dbg.SaveFile = Config.SaveDebugStepsInBatch;
+            Console.WriteLine($"Che do CHAY CA THU MUC: {danhSachAnh.Count} anh " +
+                              $"(da tu tat cua so + dung cho phim" +
+                              $"{(Config.SaveDebugStepsInBatch ? "" : ", khong ghi anh tung buoc")}).");
+        }
+
+        // ---- Chạy từng ảnh ----------------------------------------------------
+        int soThanhCong = 0, soKhongThayPhanNho = 0, soLoi = 0;
+        var thoiDiemBatDau = DateTime.Now;
+
+        // Mỗi ảnh kèm số thứ tự để log biết đang ở ảnh nào — chạy song song thì thứ tự
+        // in ra không còn theo số này nữa, nên càng cần nó để đối chiếu.
+        var congViec = danhSachAnh.Select((p, n) => (Path: p, ThuTu: n + 1)).ToList();
+
+        // Cả mẻ nhiều ảnh + Config.SoLuong > 1 thì chạy song song, mỗi luồng ôm trọn
+        // một XuLyMotAnh. Không chia nhỏ hơn nữa (kiểu mỗi luồng một góc) vì như thế
+        // các luồng phải chờ nhau ở cuối mỗi ảnh, còn chia theo ảnh thì luồng nào xong
+        // là bốc ảnh kế tiếp ngay, CPU không có lúc nào rảnh.
+        int soLuong = Math.Max(1, Config.SoLuong);
+        bool chaySongSong = chayCaMe && soLuong > 1;
+
+        if (chaySongSong)
+        {
+            Dbg.SongSong = true;   // Dbg chuyển sang bộ đếm + bộ đệm log riêng từng luồng
+            Console.WriteLine($"Chay SONG SONG {soLuong} luong (moi luong anh). " +
+                              $"Log cua moi anh khi anh do chay, " +
+                              $"nen thu tu khoi khong theo thu tu file.");
+            Console.WriteLine();
+
+            Parallel.ForEach(
+                congViec,
+                new ParallelOptions { MaxDegreeOfParallelism = soLuong },
+                cv =>
+                {
+                    switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                    {
+                        // Interlocked: ba biến đếm này bị bốn luồng cộng cùng lúc.
+                        // soThanhCong++ KHÔNG phải thao tác nguyên tử (đọc - cộng - ghi),
+                        // hai luồng cộng cùng lúc là mất một lượt đếm.
+                        case KetQuaXuLy.ThanhCong: Interlocked.Increment(ref soThanhCong); break;
+                        case KetQuaXuLy.KhongThayPhanNho: Interlocked.Increment(ref soKhongThayPhanNho); break;
+                        default: Interlocked.Increment(ref soLoi); break;
+                    }
+                });
+
+            Dbg.SongSong = false;
+        }
+        else
+        {
+            foreach (var cv in congViec)
+            {
+                switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                {
+                    case KetQuaXuLy.ThanhCong: soThanhCong++; break;
+                    case KetQuaXuLy.KhongThayPhanNho: soKhongThayPhanNho++; break;
+                    default: soLoi++; break;
+                }
+            }
+        }
+
+        // ---- Tổng kết ---------------------------------------------------------
+        Console.WriteLine();
+        Console.WriteLine($"===== XONG {danhSachAnh.Count} anh trong {(DateTime.Now - thoiDiemBatDau).TotalSeconds:0.0}s" +
+                          $"{(chaySongSong ? $" ({soLuong} luong)" : "")} =====");
+        Console.WriteLine($"  bat duoc phan nho  : {soThanhCong}");
+        Console.WriteLine($"  khong thay phan nho: {soKhongThayPhanNho}");
+        Console.WriteLine($"  loi                : {soLoi}");
+        Console.WriteLine($"  anh ket qua nam trong: {Path.GetFullPath(_outDirG2)}");
+
+        Dbg.CloseAll();
+        return soLoi > 0 ? 2 : 0;
+    }
+
+    /// <summary>Khoá riêng cho Console: bốn luồng in cùng lúc thì các khối log cài răng lược vào nhau.</summary>
+    private static readonly object _khoaConsole = new();
+
+    /// <summary>
+    /// Chạy một ảnh và in trọn khối log của nó. Dùng chung cho cả chạy tuần tự lẫn song song,
+    /// nên hai đường chạy không bao giờ lệch hành vi nhau.
+    /// </summary>
+    private static KetQuaXuLy ChayMotViec(string inputPath, int thuTu, int tong, bool chayCaMe)
+    {
+        var tenAnh = Path.GetFileNameWithoutExtension(inputPath);
+
+        // Mỗi ảnh một thư mục debug riêng: Dbg.Reset() xoá sạch *.png trong thư mục đó,
+        // dùng chung một thư mục thì ảnh sau xoá mất ảnh trước (song song thì còn xoá
+        // ngay lúc luồng khác đang ghi).
+        if (chayCaMe || Config.SaveDebugStepsInBatch) Dbg.BatDauLuong(Path.Combine("debug_out", tenAnh));
+
+        Dbg.Info($"===== [{thuTu}/{tong}] {Path.GetFileName(inputPath)} =====");
+
+        KetQuaXuLy ketQua;
+        // try/catch bọc TỪNG ảnh: một file hỏng không được phép làm chết cả mẻ.
+        // Trong Parallel.ForEach còn quan trọng hơn: một exception lọt ra ngoài là
+        // cả vòng lặp dừng, những ảnh chưa chạy bị bỏ luôn.
+        try
+        {
+            ketQua = XuLyMotAnh(inputPath);
+        }
+        catch (Exception ex)
+        {
+            ketQua = KetQuaXuLy.Loi;
+            Dbg.Info($"  Loi khi xu ly{Path.GetFileName(inputPath)}: {ex.Message}");
+        }
+
+        // Lấy log đã gom rồi in một phát — có khoá nên khối của ảnh này không bị
+        // khối của ảnh khác chen ngang.
+        var log = Dbg.KetThucLuong();
+        if (log.Length > 0)
+        {
+            lock (_khoaConsole)
+            {
+                Console.Write(log);
+                Console.WriteLine();
+            }
+        }
+
+        return ketQua;
+    }
+
+    /// <summary>Kết quả xử lý một ảnh — tách 3 mức để tổng kết cuối mẻ cho rõ ràng.</summary>
+    private enum KetQuaXuLy
+    {
+        /// <summary>Chạy hết pipeline và bắt được phần nhô.</summary>
+        ThanhCong,
+        /// <summary>Giai đoạn 1 xong nhưng giai đoạn 2 không tìm ra phần nhô (chưa chắc là lỗi).</summary>
+        KhongThayPhanNho,
+        /// <summary>Không đọc được ảnh, hoặc giai đoạn 1 không dò ra vùng nào.</summary>
+        Loi
+    }
+
+    /// <summary>
+    /// Gom danh sách ảnh cần chạy, theo thứ tự ưu tiên:
+    ///   1. Config.InputFolderPath  (chạy cả thư mục)
+    ///   2. Config.InputImagePath   (chạy đúng 1 ảnh)
+    ///   3. tham số dòng lệnh       (file hoặc thư mục đều nhận)
+    ///   4. tự tạo sample.png
+    /// </summary>
+    private static List<string> ThuThapAnhVao(string[] args)
+    {
+        // 1. Thư mục cấu hình sẵn trong code.
+        if (!string.IsNullOrWhiteSpace(Config.InputFolderPath))
+        {
+            if (!Directory.Exists(Config.InputFolderPath))
+            {
+                Console.WriteLine($"Khong tim thay thu muc: {Config.InputFolderPath}");
+                return new List<string>();
+            }
+            var ds = QuetThuMuc(Config.InputFolderPath);
+            Console.WriteLine($"Thu muc vao: {Config.InputFolderPath} -> {ds.Count} anh");
+            return ds;
+        }
+
+        // 2/3. Một đường dẫn cụ thể: có thể là file, cũng có thể là thư mục.
+        var duongDan = !string.IsNullOrWhiteSpace(Config.InputImagePath)
+                       ? Config.InputImagePath
+                       : args.FirstOrDefault(a => !a.StartsWith("--"));
+
+        if (string.IsNullOrWhiteSpace(duongDan))
+            duongDan = EnsureSampleImage();   // 4. không có gì thì tự vẽ ảnh mẫu
+
+        if (Directory.Exists(duongDan))
+        {
+            var ds = QuetThuMuc(duongDan);
+            Console.WriteLine($"Thu muc vao: {duongDan} -> {ds.Count} anh");
+            return ds;
+        }
+
+        if (!File.Exists(duongDan))
+        {
+            Console.WriteLine($"Khong tim thay anh: {duongDan}");
+            return new List<string>();
+        }
+
+        return new List<string> { duongDan };
+    }
+
+    /// <summary>Lấy các file ảnh trong thư mục, sắp theo tên cho lần chạy nào cũng cùng thứ tự.</summary>
+    private static List<string> QuetThuMuc(string folder)
+    {
+        var option = Config.Recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
+        return Directory.EnumerateFiles(folder, "*.*", option)
+                        .Where(f => Config.ImageExtensions.Contains(
+                                        Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
+                        .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+    }
+
+    /// <summary>
+    /// Chạy trọn pipeline cho MỘT ảnh. Tách hẳn ra khỏi Main để vòng foreach ở trên
+    /// gọn và để mọi Mat trong này chắc chắn được Dispose trước khi sang ảnh kế tiếp
+    /// — ảnh 3648x3648 mà rò vài chục cái là hết RAM giữa chừng.
+    /// </summary>
+    private static KetQuaXuLy XuLyMotAnh(string inputPath)
+    {
         using var src = Cv2.ImRead(inputPath, ImreadModes.Color);
+        string nameImg = Path.GetFileName(inputPath);
+        string[] nameImgResult = nameImg.Split('.');
+        string nameImgMain = nameImgResult[0];
+
         if (src.Empty())
         {
-            Console.WriteLine($"Đọc ảnh thất bại (file hỏng hoặc không phải ảnh): {inputPath}");
-            return 1;
+            Dbg.Info($"  Doc anh that bai: {inputPath}");
+            return KetQuaXuLy.Loi;
         }
 
-        Console.WriteLine($"Ảnh vào: {inputPath}  ({src.Width}x{src.Height})");
+        Dbg.Info($"  Anh vao: {src.Width}x{src.Height}");
         Dbg.Reset();
+       //ResetLuuAnhG2(inputPath);   // tên file ảnh giai đoạn 2 lấy theo tên ảnh vào
 
-        // ---- Chạy pipeline ----------------------------------------------------
-        // Giai đoạn 1: dò và cắt vùng lớn nhất (cả con hàng) ra khỏi ảnh gốc.
+        // ---- Giai đoạn 1: dò và cắt vùng lớn nhất (cả con hàng) ra khỏi ảnh gốc.
         using var result = CropLargestRegion(src);
 
         // >>> SỬA LỖI: câu check null này PHẢI đứng TRƯỚC lời gọi CropSmallRegion.
@@ -143,30 +450,42 @@ public static class Program
         // Nguyên tắc: kiểm tra null NGAY SAU khi nhận giá trị, trước mọi lần dùng nó.
         if (result is null || result.Empty())
         {
-            Console.WriteLine("KHÔNG dò được vùng nào. Thử giảm Config.CannyLow hoặc Config.MinAreaRatio.");
-            Dbg.CloseAll();
-            return 2;
+            Dbg.Info("  Khong do duoc vung nao giam Config.CannyLow or Config.MinAreaRatio.");
+            return KetQuaXuLy.Loi;
         }
 
-        // Giai đoạn 2: từ ảnh đã cắt, soi các góc để tìm phần nhô ra.
-        // Trả về null nghĩa là không tìm thấy — không phải lỗi chương trình,
-        // nên chỉ in cảnh báo rồi vẫn ghi kết quả giai đoạn 1 ra file.
-        using var imgPhanNho = CropSmallRegion(result);
-        if (imgPhanNho is null)
-            Console.WriteLine("Chưa bắt được phần nhô ra. Xem dòng log 'ratio mask' và ảnh 5_Residual để biết kẹt ở đâu.");
-        else
-            Console.WriteLine($"Đã bắt được phần nhô ra: {imgPhanNho.Width}x{imgPhanNho.Height}");
+        // Ảnh cắt giai đoạn 1 vẫn ghi ra như cũ, kể cả khi giai đoạn 2 trượt.
+        Directory.CreateDirectory(_outDirG2);
+        var outPath = Path.Combine(_outDirG2, _baseName + "_crop.png");
+        //Cv2.ImWrite(outPath, result);
+        //Dbg.Info($"  Giai đoạn 1: {outPath}  ({result.Width}x{result.Height})");
 
-        Directory.CreateDirectory("output");
-        var outPath = Path.Combine("output",
-            Path.GetFileNameWithoutExtension(inputPath) + "_crop.png");
-        Cv2.ImWrite(outPath, result);
+        // ---- Giai đoạn 2: từ ảnh đã cắt, soi CẢ BỐN GÓC để tìm phần nhô ra.
+        // Ảnh của giai đoạn 2 được lưu ngay bên trong CropSmallRegion/PickProtrusion.
+        var cacGoc = CropSmallRegion(result, nameImgMain);
+        try
+        {
+            var gocBatDuoc = cacGoc.Where(g => g.Anh is not null).ToList();
 
-        Console.WriteLine($"Đã cắt xong: {outPath}  ({result.Width}x{result.Height})");
-        Console.WriteLine($"Ảnh từng bước nằm trong: {Path.GetFullPath(Dbg.OutDir)}");
+            if (gocBatDuoc.Count == 0)
+            {
+                Dbg.Info("  Giai doan 2: Ca 4 goc deu chua bat duoc phan nho " +
+                         "(xem log 'ratio mask' va anh 6_Residual cua tung goc).");
+                LuuAnhG2(src, _outDirNotFound, $"{nameImgMain}");
+                return KetQuaXuLy.KhongThayPhanNho;
+            }
 
-        Dbg.CloseAll();
-        return 0;
+            var motTa = string.Join(", ", gocBatDuoc.Select(g => $"{g.Goc}({g.Anh!.Width}x{g.Anh.Height})"));
+            Dbg.Info($"  Giai doan 2: bat duoc {gocBatDuoc.Count}/{cacGoc.Count} goc -> {motTa}; " +
+                     $"da luu {_demAnhG2} anh.");
+            return KetQuaXuLy.ThanhCong;
+        }
+        finally
+        {
+            // Mat KHÔNG do GC dọn (bộ nhớ nằm ngoài vùng quản lý). Ảnh đã ghi ra file rồi
+            // nên tới đây là giải phóng được — chạy 4 luồng x 4 góc mà quên là hết RAM rất nhanh.
+            foreach (var g in cacGoc) g.Anh?.Dispose();
+        }
     }
 
     /// <summary>
@@ -175,7 +494,7 @@ public static class Program
     /// </summary>
     private static Mat? CropLargestRegion(Mat src)
     {
-        Dbg.Show(src, "original");
+        //Dbg.Show(src, "original");
 
         // --- B1: thu nhỏ để dò cho nhanh. Toạ độ tìm được sẽ nhân ngược lại sau.
         double scale = Math.Min(1.0, (double)Config.WorkWidth / src.Width);
@@ -184,7 +503,7 @@ public static class Program
             Cv2.Resize(src, work, new Size(), scale, scale, InterpolationFlags.Area);
         else
             src.CopyTo(work);
-        Dbg.Log($"scale dò = {scale:0.###} -> làm việc trên {work.Width}x{work.Height}");
+        //Dbg.Log($"scale dò = {scale:0.###} -> làm việc trên {work.Width}x{work.Height}");
 
         // --- B2: chuyển xám. Mọi thuật toán dò cạnh đều cần ảnh 1 kênh.
         using var gray = new Mat();
@@ -193,20 +512,21 @@ public static class Program
         // Tý thử đổi về 0 hoặc các cái khác xem nó biến đổi ảnh như thế nào  ------------
 
         Cv2.CvtColor(work, gray, ColorConversionCodes.BGR2GRAY);
-        //Dbg.Show(gray, "gray");
+        Dbg.Show(gray, "gray");
 
         // --- B3: làm mờ để bớt nhiễu, tránh Canny bắt phải hạt nhiễu.
         using var blur = new Mat();
 
         // Điều chỉnh BlurKernel và BlurKernel sang một số khác thì nó sẽ như nào 
         Cv2.GaussianBlur(gray, blur, new Size(Config.BlurKernel, Config.BlurKernel), 0);
-        //Dbg.Show(blur, "blur");
+        Dbg.Show(blur, "blur");
 
         // --- B4: dò cạnh.
         using var edges = new Mat();
         // Điều chỉnh cạnh CannyLow và CannyHigh sang số kahcs thì nó như nào ảnh tìm được trả về kết quả như nào 
-        Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
-        //Dbg.Show(edges, "canny");
+        //Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
+        Cv2.Canny(blur, edges, 150, 210);
+        Dbg.Show(edges, "canny");
         // Mẹo: nonzero% ở dòng stats nói lên nhiều thứ —
         //   quá thấp (<0.5%) = ngưỡng cao quá, cạnh biến mất
         //   quá cao (>15%)   = ngưỡng thấp quá, toàn nhiễu
@@ -226,9 +546,12 @@ public static class Program
         }
 
         // --- B6: tìm đường viền.
+        //Cv2.FindContours(closed, out Point[][] contours, out _,
+        //    RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+
         Cv2.FindContours(closed, out Point[][] contours, out _,
             RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-
+        Dbg.Show(closed, "morph_close");
 
         var imgContours = gray.Clone();
         Cv2.CvtColor(imgContours, imgContours, ColorConversionCodes.GRAY2BGR);
@@ -236,8 +559,8 @@ public static class Program
         {
             // 1. Tạo màu HSV: H (0-179), S (255 - rực rỡ nhất), V (255 - sáng nhất)
             byte hue = (byte)(i * 179 / contours.Length);
-            Mat hsvPixel = new Mat(1, 1, MatType.CV_8UC3, new Scalar(hue, 255, 255));
-            Mat bgrPixel = new Mat();
+            using Mat hsvPixel = new Mat(1, 1, MatType.CV_8UC3, new Scalar(hue, 255, 255));
+            using Mat bgrPixel = new Mat();
 
             // 2. Convert HSV -> BGR để lấy Scalar chuẩn cho DrawContours
             Cv2.CvtColor(hsvPixel, bgrPixel, ColorConversionCodes.HSV2BGR);
@@ -248,11 +571,13 @@ public static class Program
             Cv2.DrawContours(imgContours, contours, i, color, 2);
 
             // Giải phóng bộ nhớ Mat tạm
-            hsvPixel.Dispose();
-            bgrPixel.Dispose();
+            //hsvPixel.Dispose();
+            //bgrPixel.Dispose();
         }
-        //Dbg.Show(imgContours, "imgContours");
+        Dbg.Show(imgContours, "imgContours");
 
+
+        
 
         //Dbg.Log($"tim duoc {contours.Length} contour");
 
@@ -263,8 +588,8 @@ public static class Program
             .OrderByDescending(x => x.Area)
             .ToList();
 
-        Dbg.Log($"còn {candidates.Count} contour sau khi lọc diện tích " +
-                $"(>= {Config.MinAreaRatio:P0} ảnh = {imageArea * Config.MinAreaRatio:0} px)");
+        Dbg.Log($"con {candidates.Count} contour sau khi loc dien tich " +
+                $"(>= {Config.MinAreaRatio:P0} anh = {imageArea * Config.MinAreaRatio:0} px)");
 
         // >>> SỬA LỖI (loại nguy hiểm: vẫn COMPILE SẠCH, không một warning nào).
         // Code cũ:
@@ -285,7 +610,7 @@ public static class Program
 
         foreach (var (_, area) in candidates.Take(5))
         {
-            Dbg.Log($"  - diện tích {area:0} px ({area / imageArea:P1} ảnh)");
+            Dbg.Log($"  - dien tich {area:0} px ({area / imageArea:P1} anh)");
         }
 
         // Vẽ đè các contour lên ảnh để nhìn xem nó bắt đúng chỗ chưa.
@@ -296,7 +621,7 @@ public static class Program
                 new Scalar(0, 255, 0), 2);
             Cv2.DrawContours(overlay, new[] { candidates[0].Contour }, -1,
                 new Scalar(0, 0, 255), 3);   // đỏ = vùng được chọn
-           // Dbg.Show(overlay, "contours");
+            Dbg.Show(overlay, "contours");
         }
 
         var best = candidates[0].Contour;
@@ -304,7 +629,7 @@ public static class Program
         // --- B7: xấp xỉ thành đa giác, xem có phải tứ giác không.
         double peri = Cv2.ArcLength(best, true);
         var approx = Cv2.ApproxPolyDP(best, Config.ApproxEpsRatio * peri, true);
-        Dbg.Log($"xấp xỉ đa giác: {approx.Length} đỉnh (eps = {Config.ApproxEpsRatio * peri:0.#})");
+        Dbg.Log($"Xap xi da giac: {approx.Length} dinh (eps = {Config.ApproxEpsRatio * peri:0.#})");
 
         // --- B8: cắt. Toạ độ đang ở ảnh thu nhỏ nên phải chia lại cho scale.
         if (Config.WarpIfQuad && approx.Length == 4)
@@ -312,7 +637,7 @@ public static class Program
             var corners = OrderCorners(approx.Select(p =>
                 new Point2f((float)(p.X / scale), (float)(p.Y / scale))).ToArray());
 
-            foreach (var c in corners) Dbg.Log($"  góc: ({c.X:0}, {c.Y:0})");
+            foreach (var c in corners) Dbg.Log($"  goc: ({c.X:0}, {c.Y:0})");
 
             var warped = WarpToRect(src, corners);
             //Dbg.Show(warped, "result_warp");
@@ -335,51 +660,126 @@ public static class Program
         }
     }
 
+    /// <summary>Kết quả soi một góc: có bắt được gì không, ở đâu, và ảnh cắt ra.</summary>
+    /// <param name="Goc">góc nào</param>
+    /// <param name="RoiTrongAnh">vị trí ROI trong ảnh đã cắt của giai đoạn 1</param>
+    /// <param name="VungTrongRoi">vị trí phần nhô, tính theo toạ độ trong ROI (null = không thấy)</param>
+    /// <param name="Anh">ảnh màu của phần nhô — người gọi có trách nhiệm Dispose</param>
+    public sealed record KetQuaGoc(Goc Goc, Rect RoiTrongAnh, Rect? VungTrongRoi, Mat? Anh);
+
     /// <summary>
-    /// Từ ảnh đã cắt (cả con hàng), soi góc TRÊN-PHẢI để tìm phần nhô ra rồi cắt nó.
-    /// Trả về null nếu không tìm thấy (KHÔNG phải lỗi — cứ đọc log để biết kẹt ở bước nào).
+    /// Từ ảnh đã cắt (cả con hàng), soi LẦN LƯỢT BỐN GÓC để tìm phần nhô ra.
+    /// Góc nào không thấy thì phần tử tương ứng có Anh = null (KHÔNG phải lỗi).
+    ///
+    /// Bốn góc chạy tuần tự trong đây, vì việc chia luồng đã làm ở tầng trên rồi
+    /// (mỗi luồng một ảnh). Chia luồng thêm lần nữa ở đây chỉ tổ tranh CPU của nhau.
+    /// </summary>
+    public static List<KetQuaGoc> CropSmallRegion(Mat src, string nameImgMain)
+    {
+        //Dbg.Show(src, "0_AnhDaCat");
+
+        var ketQua = new List<KetQuaGoc>();
+        foreach (var goc in GocCfg.CacGocCanSoi)
+        {
+            Dbg.Log($"----- soi goc {goc} -----");
+            ketQua.Add(SoiMotGoc(src, goc, nameImgMain));
+        }
+        return ketQua;
+    }
+
+
+
+
+    /// <summary>
+    /// Vùng ROI của một góc, đã kẹp trong khung ảnh.
+    ///
+    /// Toán tử &amp; giữa hai Rect trong OpenCvSharp = phép GIAO. Bắt buộc phải kẹp:
+    /// ảnh giai đoạn 1 nhỏ hơn 500px là new Mat(src, rect) ném exception ngay.
+    /// </summary>
+    private static Rect VungRoiCuaGoc(Goc goc, Size anh)
+    {
+        int w = anh.Width, h = anh.Height;
+        // Tính toán kích thước pixel thực tế dựa trên phần trăm (%) của ảnh
+        int roiW = (int)Math.Round(w * GocCfg.RoiW);
+        int roiH = (int)Math.Round(h * GocCfg.RoiH);
+        int lechTren = (int)Math.Round(h * GocCfg.LechTren);
+        int lechDuoi = (int)Math.Round(h * GocCfg.LechDuoi);
+
+        // Giữ nguyên cách đặt của code cũ: bốn đỉnh ảnh, rồi lùi vào theo chiều rộng/cao ROI.
+        Point topLeft = new(0, 0);
+        Point topRight = new(w - 1, 0);
+        Point bottomLeft = new(0, h - 1);
+        Point bottomRight = new(w - 1, h - 1);
+
+        Rect r = goc switch
+        {
+            //Goc.TrenTrai => new Rect(topLeft.X, topLeft.Y + lechTren, roiW, roiH),
+            //Goc.TrenPhai => new Rect(topRight.X - roiW, topRight.Y + lechTren, roiW, roiH),
+            //Goc.DuoiPhai => new Rect(bottomRight.X - roiW, bottomRight.Y - roiH - lechDuoi, roiW, roiH),
+            //Goc.DuoiTrai => new Rect(bottomLeft.X, bottomLeft.Y - roiH - lechDuoi, roiW, roiH),
+
+            Goc.TrenTrai => new Rect(topLeft.X, topLeft.Y , roiW, roiH),
+            Goc.TrenPhai => new Rect(topRight.X - roiW, topRight.Y , roiW, roiH),
+            Goc.DuoiPhai => new Rect(bottomRight.X - roiW, bottomRight.Y - roiH , roiW, roiH),
+            Goc.DuoiTrai => new Rect(bottomLeft.X, bottomLeft.Y - roiH , roiW, roiH),
+            _ => throw new ArgumentOutOfRangeException(nameof(goc), goc, "Goc khong hop le")
+        };
+        return r & new Rect(0, 0, w, h);
+    }
+
+
+    //private static Rect VungRoiCuaGoc(Goc goc, Size anh)
+    //{
+    //    int w = anh.Width, h = anh.Height;
+    //    int roiW = GocCfg.RoiW, roiH = GocCfg.RoiH;
+
+    //    // Giữ nguyên cách đặt của code cũ: bốn đỉnh ảnh, rồi lùi vào theo chiều rộng/cao ROI.
+    //    Point topLeft = new(0, 0);
+    //    Point topRight = new(w - 1, 0);
+    //    Point bottomLeft = new(0, h - 1);
+    //    Point bottomRight = new(w - 1, h - 1);
+
+    //    Rect r = goc switch
+    //    {
+    //        Goc.TrenTrai => new Rect(topLeft.X, topLeft.Y + GocCfg.LechTren, roiW, roiH),
+    //        Goc.TrenPhai => new Rect(topRight.X - roiW, topRight.Y + GocCfg.LechTren, roiW, roiH),
+    //        Goc.DuoiPhai => new Rect(bottomRight.X - roiW, bottomRight.Y - roiH - GocCfg.LechDuoi, roiW, roiH),
+    //        Goc.DuoiTrai => new Rect(bottomLeft.X, bottomLeft.Y - roiH - GocCfg.LechDuoi, roiW, roiH),
+    //        _ => throw new ArgumentOutOfRangeException(nameof(goc), goc, "Goc khong hop le")
+    //    };
+    //    return r & new Rect(0, 0, w, h);
+    //}
+
+    /// <summary>
+    /// Soi MỘT góc để tìm phần nhô ra rồi cắt nó.
     ///
     /// MẠCH CHÍNH, nhớ đúng thứ tự này:
     ///   ảnh màu -> xám -> làm mờ -> nhị phân (Otsu) -> lấp lỗ -> giữ blob to nhất
     ///           -> opening bằng đĩa -> TRỪ đi -> lọc ứng viên -> ra bbox
     /// </summary>
-    public static Mat? CropSmallRegion(Mat src)
+    private static KetQuaGoc SoiMotGoc(Mat src, Goc goc, string nameImgMain)
     {
-        Dbg.Show(src, "0_AnhDaCat");
+        Dbg.Show(src, "goc");
+        Rect areaGoc = VungRoiCuaGoc(goc, src.Size());
 
-        int w = src.Width;
-        int h = src.Height;
-        int roiW = 500;
-        int roiH = 500;
-
-        Point topRight = new(w - 1, 0);
-
-        // ================================================================
-        //  CẮT ROI GÓC TRÊN-PHẢI
-        // ================================================================
-        // >>> SỬA LỖI: phải CLAMP (giao với khung ảnh) trước khi cắt.
-        // Toán tử & giữa hai Rect trong OpenCvSharp = phép giao (intersection).
-        // Thiếu bước này, nếu ảnh cắt được nhỏ hơn 500px thì new Mat(src, rect)
-        // ném exception ngay, vì rect thò ra ngoài biên ảnh.
-        Rect areaTrenPhai = new Rect(topRight.X - roiW, topRight.Y + 50, roiW, roiH)
-                            & new Rect(0, 0, src.Width, src.Height);
-
-        if (areaTrenPhai.Width < 50 || areaTrenPhai.Height < 50)
+        if (areaGoc.Width < 50 || areaGoc.Height < 50)
         {
-            Dbg.Log($"ROI tren-phai qua nho sau khi clamp: {areaTrenPhai}");
-            return null;
+            Dbg.Log($"ROI goc {goc} qua nho sau khi kep: {areaGoc}");
+            return new KetQuaGoc(goc, areaGoc, null, null);
         }
 
         // using = tự gọi Dispose khi ra khỏi hàm. Mat giữ bộ nhớ ngoài vùng quản lý của GC,
         // quên using là rò bộ nhớ. Ảnh 40MB mà chạy vòng lặp nhiều file là hết RAM ngay.
-        using Mat imgTrenPhai = new(src, areaTrenPhai);
-        Dbg.Show(imgTrenPhai, "1_ROI_raw");
+        using Mat imgGoc = new(src, areaGoc);
+        Dbg.Show(imgGoc, $"1_ROI_{goc}");
+
+        //Program.SweepDiskRadius(anhDaCat: imgGoc, goc: goc);
 
         // ================================================================
         //  BƯỚC 1: chuyển xám
         // ================================================================
         // Mọi thuật toán nhị phân / morphology đều làm việc trên ảnh 1 kênh.
-        using Mat gray = ToGray(imgTrenPhai);
+        using Mat gray = ToGray(imgGoc);
 
         // ================================================================
         //  BƯỚC 2: làm mờ
@@ -409,7 +809,7 @@ public static class Program
         // Cách tự động: so độ sáng trung bình 4 góc ảnh với trung bình toàn ảnh.
         using var mask = new Mat();
         Cv2.Threshold(blurred, mask, 0, 255, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
-        Dbg.Show(mask, "2_Threshold");   // ★ KIỂM TRA: vật thể phải TRẮNG, nền phải ĐEN
+        Dbg.Show(mask, $"2_Threshold_{goc}");   // ★ KIỂM TRA: vật thể phải TRẮNG, nền phải ĐEN
 
         // ================================================================
         //  BƯỚC 4: closing — vá khe nứt và lỗ nhỏ bên trong vật thể
@@ -418,9 +818,10 @@ public static class Program
         // mà không làm vật thể phình to ra.
         // Dùng Ellipse chứ đừng dùng Rect: hình tròn không thiên vị hướng nào,
         // nên kết quả không đổi khi vật thể đặt nghiêng.
-        using var k5 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5));
-        Cv2.MorphologyEx(mask, mask, MorphTypes.Close, k5, iterations: 2);
-        Dbg.Show(mask, "3_Closed");
+        using var k7 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5));
+        Cv2.MorphologyEx(mask, mask, MorphTypes.Close, k7, iterations: 2);
+        Dbg.Show(mask, $"3_Closed_{goc}");
+        var test = "";
 
         // ================================================================
         //  BƯỚC 5: giữ blob to nhất + lấp kín ruột
@@ -440,8 +841,9 @@ public static class Program
         // LargestFilled làm đúng việc cần và đơn giản hơn nhiều:
         // FindContours(External) chỉ trả về đường biên NGOÀI cùng, vẽ lại nó với
         // thickness = -1 (tô đặc) là vừa bỏ được blob rác vừa lấp kín ruột, một công đôi việc.
-        using Mat objMask = LargestFilled(mask);
-        Dbg.Show(objMask, "4_ObjMask");
+        using Mat objMask = 
+            LargestFilled(mask);
+        Dbg.Show(objMask, $"4_ObjMask_{goc}");
 
         // ================================================================
         //  BƯỚC 6: sanity check — cái đèn báo
@@ -452,12 +854,12 @@ public static class Program
         // nó khiến bạn tin tưởng rồi đi tìm lỗi ở bước sau, sai chỗ hoàn toàn.
         double roiArea = (double)objMask.Rows * objMask.Cols;
         double ratio = Cv2.CountNonZero(objMask) / roiArea;
-        Dbg.Log($"ratio mask = {ratio:P1}   (kỳ vọng ~30-45% cho ROI góc trên-phải)");
+        Dbg.Log($"ratio mask = {ratio:P1}   (kỳ vọng ~30-45% cho ROI ở góc)");
 
         if (ratio < ProtrusionCfg.MinObjectRatio || ratio > ProtrusionCfg.MaxObjectRatio)
         {
-            Dbg.Log("=> MASK HỎNG. Mở ảnh 2_Threshold xem có bị đảo trắng/đen không.");
-            return null;
+            Dbg.Log($"=> MASK HONG o goc {goc}. Mo anh 2_Threshold_{goc} xem co bi dao trang/den khong.");
+            return new KetQuaGoc(goc, areaGoc, null, null);
         }
 
         // ================================================================
@@ -480,53 +882,78 @@ public static class Program
         // Đây cũng là lý do cách này hơn hẳn FitLine: FitLine giả định biên là
         // đường THẲNG, sai ngay khi biên cong hoặc có nhiều phần nhô.
         using var opened = OpenWithDisk(objMask, ProtrusionCfg.DiskRadius, ProtrusionCfg.OpenDownScale);
-        Dbg.Show(opened, "5_Opened");    // ★ KIỂM TRA: thân còn nguyên, cụm nhô đã BIẾN MẤT
+        Dbg.Show(opened, $"5_Opened_{goc}");    // ★ KIỂM TRA: thân còn nguyên, cụm nhô đã BIẾN MẤT
 
         using var residual = new Mat();
         // THỨ TỰ THAM SỐ QUAN TRỌNG: objMask trước, opened sau.
         // Cv2.Subtract là phép trừ có bão hoà (kết quả âm bị kẹp về 0),
         // nên đảo ngược hai tham số sẽ ra ảnh rỗng hoàn toàn chứ không báo lỗi gì.
         Cv2.Subtract(objMask, opened, residual);
-        Dbg.Show(residual, "6_Residual");
+        Dbg.Show(residual, $"6_Residual_{goc}");
 
         // ================================================================
         //  BƯỚC 8: lọc ứng viên trong residual
         // ================================================================
         // Residual còn lẫn rác: chóp nhọn của thân bị bào, viền răng cưa, đốm nhiễu.
         // PickProtrusion lọc bằng 4 tiêu chí, đọc chi tiết trong hàm đó.
-        Rect? found = PickProtrusion(residual, opened, objMask.Size(), roiArea);
-
+        //
+        // Truyền thêm imgGoc (ảnh MÀU của ROI) để trong vòng foreach duyệt ứng viên,
+        // mỗi ứng viên qua đủ bộ lọc đều được cắt và lưu ra file ngay tại chỗ.
+        Rect? found = PickProtrusion(residual, opened, objMask.Size(), roiArea, imgGoc, goc);
+        
         if (found is null)
         {
-            Dbg.Log("Không ứng viên nào qua được bộ lọc.");
-            Dbg.Log("=> Mở ảnh 6_Residual xem có gì không:");
-            Dbg.Log("   - Residual RỖNG        -> DiskRadius quá NHỎ, tăng lên");
-            Dbg.Log("   - Residual đầy rác     -> DiskRadius quá LỚN, giảm xuống");
-            Dbg.Log("   - Residual đúng chỗ    -> bộ lọc quá chặt, nới MinAreaRatio/MinAspect");
-            Dbg.Log("   Hoặc gọi Program.SweepDiskRadius(imgTrenPhai) để quét tự động.");
-            return null;
+            Dbg.Log($"Goc {goc}: khong ung vien nao qua duoc bo loc.");
+            Dbg.Log($"=> Mo anh 6_Residual_{goc} xem co gi khong:");
+            Dbg.Log("   - Residual RONG        -> DiskRadius qua NHO, tang len");
+            Dbg.Log("   - Residual day rac     -> DiskRadius qua LON, giam xuong");
+            Dbg.Log("   - Residual dung cho    -> bo loc qua chat, noi MinAreaRatio/MinAspect");
+            Dbg.Log("   Hoac goi Program.SweepDiskRadius(anhDaCat) de quet tu dong.");
+            return new KetQuaGoc(goc, areaGoc, null, null);
         }
-
+        int padding = 50;
         Rect box = found.Value;
+
+        box.X -= padding;
+        box.Y -= padding;
+        box.Width += 2 * padding;
+        box.Height += 2 * padding;
+        int imgWidth = imgGoc.Width;
+        int imgHeight = imgGoc.Height;
+        // 2. PHÒNG VỆ (Clamp Boundary) - BẮT BỘC PHẢI CÓ
+        // Giới hạn Rect nằm hoàn toàn trong khung ảnh (imgWidth, imgHeight)
+        int x = Math.Max(0, box.X);
+        int y = Math.Max(0, box.Y);
+        int width = Math.Min(imgWidth - x, box.Width + (box.X < 0 ? box.X : 0));
+        int height = Math.Min(imgHeight - y, box.Height + (box.Y < 0 ? box.Y : 0));
+
+        Rect safeCropBox = new Rect(x, y, width, height);
 
         // ---------- Vẽ overlay để mắt người kiểm tra ----------
         // Bước này không ảnh hưởng kết quả, nhưng đừng bỏ: nhìn 1 giây
         // biết ngay đúng/sai, nhanh hơn đọc log rất nhiều.
-        using (Mat vis = imgTrenPhai.Clone())
+        using (Mat vis = imgGoc.Clone())
         {
-            Cv2.Rectangle(vis, box, new Scalar(0, 255, 0), 2);
-            Cv2.PutText(vis, $"{box.Width}x{box.Height}",
-                        new Point(box.X, Math.Max(14, box.Y - 6)),
+            Cv2.Rectangle(vis, safeCropBox, new Scalar(0, 255, 0), 2);
+            Cv2.PutText(vis, $"{goc} {safeCropBox.Width}x{safeCropBox.Height}",
+                        new Point(safeCropBox.X, Math.Max(14, safeCropBox.Y - 6)),
                         HersheyFonts.HersheySimplex, 0.6, new Scalar(0, 255, 0), 2);
-            Dbg.Show(vis, "7_KetQua");
+            Dbg.Show(vis, $"7_KetQua_{goc}");
+
+            // Lưu luôn ảnh ROI có khung xanh: xem lại sau này biết ngay nó khoanh đúng chỗ chưa.
+            //LuuAnhG2(vis, $"{goc}_overlay");
         }
 
-        Dbg.Log($"TÌM THẤY phần nhô ra tại (toạ độ trong ROI): {box}");
+        Dbg.Log($"Goc {goc}: TIM THAY phan nho tai (toa do trong ROI) {box}");
 
         // Trả về ảnh MÀU của phần nhô, cắt từ ROI.
         // .Clone() là bắt buộc: new Mat(src, rect) chỉ tạo một "cửa sổ nhìn" dùng chung
-        // bộ nhớ với src. Không Clone thì khi src bị Dispose, Mat trả về thành rác.
-        return new Mat(imgTrenPhai, box).Clone();
+        // bộ nhớ với src. Không Clone thì khi imgGoc bị Dispose lúc ra khỏi hàm,
+        // Mat trả về thành rác.
+
+        var anhPhanNho1 = new Mat(imgGoc, safeCropBox).Clone();
+        LuuAnhG2(anhPhanNho1, _outDirG2, $"{nameImgMain}_{goc}");   // ảnh kết quả của góc này
+        return new KetQuaGoc(goc, areaGoc, box, anhPhanNho1);
     }
 
     /// <summary>
@@ -536,17 +963,26 @@ public static class Program
     /// <param name="body">phần thân (chính là ảnh opening), dùng để kiểm tra ứng viên có dính thân không</param>
     /// <param name="roiSize">kích thước ROI, để biết đâu là mép</param>
     /// <param name="roiArea">diện tích ROI, để quy các ngưỡng về tỉ lệ</param>
-    private static Rect? PickProtrusion(Mat residual, Mat body, Size roiSize, double roiArea)
+    /// <param name="roiMau">
+    /// ảnh MÀU của ROI (cùng kích thước với roiSize). Truyền vào thì mỗi ứng viên qua đủ
+    /// bộ lọc sẽ được cắt và lưu ra file ngay trong vòng lặp. Để null (như SweepDiskRadius
+    /// đang gọi) thì bỏ qua việc lưu — quét tham số mà lưu ảnh thì ngập thư mục output.
+    /// </param>
+    /// <param name="goc">góc đang soi, chỉ để ghi vào tên file và log</param>
+    private static Rect? PickProtrusion(Mat residual, Mat body, Size roiSize, double roiArea,
+                                        Mat? roiMau = null, Goc goc = Goc.TrenPhai)
     {
         // FindContours SỬA TRỰC TIẾP ảnh đầu vào -> luôn truyền bản Clone,
         // nếu không thì residual bị phá và những lần Dbg.Show sau sẽ thấy ảnh sai.
+        //Dbg.Show(residual, $"img raw {goc}");
         using var work = residual.Clone();
         Cv2.FindContours(work, out Point[][] cnts, out _,
                          RetrievalModes.External, ContourApproximationModes.ApproxNone);
+        Dbg.Show(work, $"Find contontours {goc}");
 
         if (cnts is null || cnts.Length == 0)
         {
-            Dbg.Log("PickProtrusion: residual rỗng, không có contour nào.");
+            Dbg.Log($"PickProtrusion ({goc}): residual rong, khong co contour nao.");
             return null;
         }
 
@@ -556,12 +992,19 @@ public static class Program
         Rect? best = null;
         double bestScore = double.MinValue;
         int loaiDienTich = 0, loaiAspect = 0, loaiMep = 0, loaiKhongDinh = 0;
+        int soUngVienDat = 0;   // đếm ứng viên qua đủ 4 bộ lọc, dùng đánh số tên file
+
+        // Diện tích contour TO NHẤT trong residual — in ra ở log cuối hàm.
+        // Khi cả mẻ đều bị loại vì diện tích, con số này cho biết ngay ngưỡng đang
+        // đặt cao hơn thực tế bao nhiêu, khỏi phải mò từng nấc.
+        double areaLonNhat = 0;
 
         foreach (var c in cnts)
         {
             // --- Lọc 1: diện tích ---
             double area = Cv2.ContourArea(c);
-            if (area < minArea || area > maxArea) { loaiDienTich++; continue; }
+            if (area > areaLonNhat) areaLonNhat = area;
+            if (area < 2000 || area > maxArea) { loaiDienTich++; continue; }
 
             // --- Lọc 2: hình dạng, đo bằng minAreaRect ---
             // BẮT BUỘC dùng MinAreaRect (hình chữ nhật XOAY ôm sát nhất), KHÔNG dùng
@@ -603,6 +1046,31 @@ public static class Program
                 continue;
             }
 
+            // ================================================================
+            //  ĐÃ TÌM ĐƯỢC MỘT VÙNG -> LƯU ẢNH NGAY TẠI ĐÂY
+            // ================================================================
+            // Tới dòng này nghĩa là ứng viên đã qua đủ 4 bộ lọc. Lưu ngay trong vòng lặp
+            // (chứ không đợi ra ngoài) để giữ được CẢ những ứng viên thua điểm ở dưới:
+            // khi bắt nhầm, mở thư mục output là so sánh được cái nào đúng cái nào sai,
+            // khỏi phải chạy lại chương trình.
+            //
+            // Dùng chung NoiRongRect với phần chấm điểm bên dưới để ảnh lưu ra
+            // đúng bằng vùng sẽ được trả về, không lệch nhau.
+            Rect vung = NoiRongRect(br, ProtrusionCfg.BboxPadding, roiSize);
+            soUngVienDat++;
+
+            if (roiMau is not null && !roiMau.Empty())
+            {
+                // Kẹp thêm lần nữa theo kích thước THẬT của ảnh màu: roiSize là kích thước
+                // của mask, về lý thuyết bằng nhau, nhưng cắt sai 1 pixel là Mat ném exception.
+                Rect cat = vung & new Rect(0, 0, roiMau.Width, roiMau.Height);
+                if (cat.Width > 0 && cat.Height > 0)
+                {
+                    using var anhUngVien = new Mat(roiMau, cat).Clone();
+                    //LuuAnhG2(anhUngVien, $"{goc}_ungvien{soUngVienDat:00}_{cat.Width}x{cat.Height}");
+                }
+            }
+
             // --- Chấm điểm ---
             // Ưu tiên vùng vừa TO vừa NHÔ XA (canhDai lớn). Nếu sau này bắt nhầm,
             // đây là chỗ đầu tiên nên chỉnh — ví dụ đổi thành area thuần,
@@ -611,15 +1079,17 @@ public static class Program
             if (score > bestScore)
             {
                 bestScore = score;
-                best = NoiRongRect(br, ProtrusionCfg.BboxPadding, roiSize);
+                best = vung;
             }
         }
 
         // Log này quý lắm: nó nói CHÍNH XÁC bộ lọc nào đang giết ứng viên của bạn,
         // khỏi phải đoán mò.
-        Dbg.Log($"PickProtrusion: {cnts.Length} contour -> loại vì " +
-                $"diện tích={loaiDienTich}, aspect={loaiAspect}, sát mép={loaiMep}, không dính thân={loaiKhongDinh}" +
-                $" -> còn lại: {(best is null ? "KHÔNG CÓ" : best.Value.ToString())}");
+        Dbg.Log($"PickProtrusion ({goc}): {cnts.Length} contour -> loại vì " +
+                $"dien tich={loaiDienTich}, aspect={loaiAspect}, sat mep={loaiMep}, khong dinh than={loaiKhongDinh}" +
+                $" -> dat {soUngVienDat}, chon: {(best is null ? "khong co" : best.Value.ToString())}");
+        Dbg.Log($"  (contour to nhat = {areaLonNhat:0} px; nguong dang dung: min=10000, " +
+                $"max={maxArea:0}, con minArea theo ti le = {minArea:0})");
 
         return best;
     }
@@ -664,11 +1134,13 @@ public static class Program
     /// Bán kính ĐÚNG là bán kính mà residual chỉ còn đúng cụm nhô, gọn và sạch.
     /// Trong log, area nhảy vọt rồi ổn định ở một dải r là dấu hiệu bạn đã vào đúng vùng.
     /// </summary>
-    public static void SweepDiskRadius(Mat anhDaCat)
+    /// <param name="anhDaCat">ảnh kết quả của giai đoạn 1</param>
+    /// <param name="goc">quét trên ROI của góc nào (mặc định trên-phải như trước)</param>
+    public static void SweepDiskRadius(Mat anhDaCat, Goc goc = Goc.TrenPhai)
     {
-        int roiW = 500, roiH = 500;
-        Rect area = new Rect(anhDaCat.Width - 1 - roiW, 50, roiW, roiH)
-                    & new Rect(0, 0, anhDaCat.Width, anhDaCat.Height);
+        // Dùng chung VungRoiCuaGoc với luồng chạy thật: quét trên một ROI mà chạy thật
+        // lại lấy ROI khác thì con số tìm ra chẳng dùng được vào đâu.
+        Rect area = VungRoiCuaGoc(goc, anhDaCat.Size());
         if (area.Width < 50 || area.Height < 50) { Dbg.Log("SweepDiskRadius: ROI qua nho."); return; }
 
         using Mat roi = new(anhDaCat, area);
@@ -694,10 +1166,12 @@ public static class Program
             using var opened = OpenWithDisk(objMask, r, ProtrusionCfg.OpenDownScale);
             using var residual = new Mat();
             Cv2.Subtract(objMask, opened, residual);
-
+            //Dbg.Show(residual, "");
             int soPixel = Cv2.CountNonZero(residual);
             ProtrusionCfg.DiskRadius = r;
-            Rect? hit = PickProtrusion(residual, opened, objMask.Size(), roiArea);
+            // roiMau = null: đang quét tham số, không lưu ảnh ứng viên (10 bán kính
+            // x mấy ứng viên là ngập thư mục output).
+            Rect? hit = PickProtrusion(residual, opened, objMask.Size(), roiArea, null, goc);
 
             Dbg.Log($"r={r,4} : residual={soPixel,7} px ({soPixel / roiArea:P2})  ->  " +
                     (hit is null ? "KHONG BAT DUOC" : $"BAT DUOC {hit.Value}"));
@@ -773,7 +1247,7 @@ public static class Program
             2.4, new Scalar(60, 60, 60), 4, LineTypes.AntiAlias);
 
         Cv2.ImWrite(path, img);
-        Console.WriteLine($"Chưa truyền đường dẫn ảnh -> đã tạo ảnh mẫu {path} để chạy thử.");
+        Console.WriteLine($"Chua truyen duong dan anh -> da tao anh mau {path} de chay thu.");
         return path;
     }
 
@@ -813,11 +1287,15 @@ public static class Program
 
         using var small = new Mat();
         Cv2.Resize(mask, small, new Size(), scale, scale, InterpolationFlags.Area);
+        //Dbg.Show(small, "Small");
         Cv2.Threshold(small, small, 127, 255, ThresholdTypes.Binary);
+        //Dbg.Show(small, "Small");
+        using var diskSmall = BuildDisk(50);
 
-        using var diskSmall = BuildDisk(rs);
         using var openedSmall = new Mat();
         Cv2.MorphologyEx(small, openedSmall, MorphTypes.Open, diskSmall);
+        //Dbg.Show(openedSmall, "Nhung phan con chua Disk");
+
 
         var opened = new Mat();
         Cv2.Resize(openedSmall, opened, mask.Size(), 0, 0, InterpolationFlags.Nearest);
@@ -830,6 +1308,14 @@ public static class Program
     {
         var k = new Mat(2 * r + 1, 2 * r + 1, MatType.CV_8UC1, Scalar.All(0));
         Cv2.Circle(k, new Point(r, r), r, Scalar.All(255), -1);
+        //Dbg.Show(k, "hinh tron");
+        return k;
+    }
+
+    private static Mat BuildRectangle(int r)
+    {
+        var k = new Mat(2 * r + 1, 2 * r + 1, MatType.CV_8UC1, Scalar.All(255));
+        Dbg.Show(k, "hinh vuong");
         return k;
     }
 
@@ -842,12 +1328,14 @@ public static class Program
         using var work = mask.Clone();   // FindContours co the sua source
         Cv2.FindContours(work, out Point[][] cnts, out _,
                          RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+       // Dbg.Show(work, "find contours");
 
         var res = new Mat(mask.Size(), MatType.CV_8UC1, Scalar.All(0));
         if (cnts == null || cnts.Length == 0) return res;
 
         var biggest = cnts.OrderByDescending(c => Cv2.ContourArea(c)).First();
         Cv2.DrawContours(res, new[] { biggest }, -1, Scalar.All(255), -1);
+        //Dbg.Show(res, "Vung tim");
         return res;
     }
 

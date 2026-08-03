@@ -1,4 +1,5 @@
 using OpenCvSharp;
+using System.Text;
 
 namespace A38.ImageCrop;
 
@@ -35,16 +36,62 @@ public static class Dbg
 
     private static int _step;
 
+    // ---- Chế độ chạy song song (nhiều ảnh cùng lúc) ---------------------------
+    // Bốn luồng cùng gọi Console.WriteLine thì log của bốn ảnh trộn vào nhau, đọc
+    // không nổi; _step và OutDir dùng chung cũng làm ảnh debug đè lên nhau.
+    // Bật SongSong thì mỗi luồng có bộ đếm, thư mục và bộ đệm log RIÊNG,
+    // xong một ảnh mới in cả khối ra một lượt.
+    //
+    // [ThreadStatic] = mỗi luồng giữ một bản sao riêng, không cần khoá gì cả.
+    // Lưu ý: field [ThreadStatic] KHÔNG chạy bộ khởi tạo trên luồng khác luồng đầu tiên,
+    // nên mọi chỗ đọc đều phải chịu được giá trị null / 0.
+    public static bool SongSong;
+
+    [ThreadStatic] private static StringBuilder? _demLog;
+    [ThreadStatic] private static int _stepLuong;
+    [ThreadStatic] private static string? _outDirLuong;
+
+    /// <summary>Gọi ở đầu mỗi ảnh trong luồng: đặt thư mục debug riêng và mở bộ đệm log.</summary>
+    public static void BatDauLuong(string outDir)
+    {
+        _outDirLuong = outDir;
+        _stepLuong = 0;
+        _demLog = new StringBuilder();
+    }
+
+    /// <summary>Lấy trọn log của luồng hiện tại rồi đóng bộ đệm (gọi khi xong một ảnh).</summary>
+    public static string KetThucLuong()
+    {
+        var s = _demLog?.ToString() ?? string.Empty;
+        _demLog = null;
+        return s;
+    }
+
+    // Dùng thư mục riêng ngay khi đã đặt, kể cả lúc chạy tuần tự — chạy cả thư mục
+    // theo kiểu tuần tự cũng cần mỗi ảnh một thư mục debug riêng.
+    private static string ThuMucHienTai => _outDirLuong ?? OutDir;
+
+    private static int TangStep() => SongSong ? ++_stepLuong : ++_step;
+
+    /// <summary>Mọi dòng chữ đều đi qua đây: song song thì gom vào đệm, không thì in thẳng.</summary>
+    private static void Out(string line)
+    {
+        if (SongSong && _demLog is not null) _demLog.AppendLine(line);
+        else Console.WriteLine(line);
+    }
+
     // ---- API chính ------------------------------------------------------------
 
     /// <summary>Gọi đầu mỗi ảnh để đánh số bước lại từ 1 và dọn thư mục output.</summary>
     public static void Reset()
     {
-        _step = 0;
+        if (SongSong) _stepLuong = 0; else _step = 0;
+
         if (Enabled && SaveFile)
         {
-            Directory.CreateDirectory(OutDir);
-            foreach (var f in Directory.GetFiles(OutDir, "*.png")) File.Delete(f);
+            var dir = ThuMucHienTai;
+            Directory.CreateDirectory(dir);
+            foreach (var f in Directory.GetFiles(dir, "*.png")) File.Delete(f);
         }
     }
 
@@ -52,8 +99,14 @@ public static class Dbg
     public static void Log(string message)
     {
         if (!Enabled) return;
-        Console.WriteLine($"  {message}");
+        Out($"  {message}");
     }
+
+    /// <summary>
+    /// Dòng thông báo LUÔN in, kể cả khi đã tắt debug — dùng cho kết quả và tổng kết.
+    /// Vẫn đi qua bộ đệm nên khi chạy song song vẫn nằm đúng khối của ảnh đó.
+    /// </summary>
+    public static void Info(string message) => Out(message);
 
     /// <summary>
     /// In số liệu của một Mat: kích thước, kiểu dữ liệu, min/max, trung bình,
@@ -62,7 +115,7 @@ public static class Dbg
     public static void Stats(Mat m, string name)
     {
         if (!Enabled || !Match(name)) return;
-        if (m.Empty()) { Console.WriteLine($"  [{name}] Mat RỖNG"); return; }
+        if (m.Empty()) { Out($"  [{name}] Mat RỖNG"); return; }
 
         var line = $"  [{name}] {m.Width}x{m.Height} {m.Type()} ch={m.Channels()}";
 
@@ -84,7 +137,7 @@ public static class Dbg
             line += $" | mean=({mean.Val0:0.#}, {mean.Val1:0.#}, {mean.Val2:0.#})";
         }
 
-        Console.WriteLine(line);
+        Out(line);
     }
 
     /// <summary>
@@ -94,23 +147,26 @@ public static class Dbg
     public static void Show(Mat m, string name, bool? pause = null)
     {
         if (!Enabled || !Match(name)) return;
-        if (m.Empty()) { Console.WriteLine($"  [{name}] Mat RỖNG, không hiện được"); return; }
+        if (m.Empty()) { Out($"  [{name}] Mat RỖNG, không hiện được"); return; }
 
-        _step++;
+        int step = TangStep();
         Stats(m, name);
 
         using var view = ToDisplay(m);
 
         if (SaveFile)
         {
-            Directory.CreateDirectory(OutDir);
-            var file = Path.Combine(OutDir, $"{_step:00}_{Sanitize(name)}.png");
+            var dir = ThuMucHienTai;
+            Directory.CreateDirectory(dir);
+            var file = Path.Combine(dir, $"{step:00}_{Sanitize(name)}.png");
             Cv2.ImWrite(file, view);
         }
 
-        if (!ShowWindow) return;
+        // Cv2.ImShow/WaitKey chỉ được gọi từ MỘT luồng — bốn luồng cùng mở cửa sổ
+        // là treo hoặc chết ngay trong native code, nên chạy song song thì cấm hẳn.
+        if (!ShowWindow || SongSong) return;
 
-        var title = $"{_step:00} - {name}";
+        var title = $"{step:00} - {name}";
         Cv2.ImShow(title, view);
         Cv2.MoveWindow(title, 60, 60);
 
@@ -155,12 +211,12 @@ public static class Dbg
     public static void Values(Mat m, Rect roi, string name)
     {
         if (!Enabled || !Match(name)) return;
-        if (m.Channels() != 1) { Console.WriteLine($"  [{name}] chỉ dump được ảnh 1 kênh"); return; }
+        if (m.Channels() != 1) { Out($"  [{name}] chỉ dump được ảnh 1 kênh"); return; }
 
         roi = roi.Intersect(new Rect(0, 0, m.Width, m.Height));
-        if (roi.Width <= 0 || roi.Height <= 0) { Console.WriteLine($"  [{name}] ROI nằm ngoài ảnh"); return; }
+        if (roi.Width <= 0 || roi.Height <= 0) { Out($"  [{name}] ROI nằm ngoài ảnh"); return; }
 
-        Console.WriteLine($"  [{name}] giá trị pixel tại {roi}:");
+        Out($"  [{name}] giá trị pixel tại {roi}:");
         using var patch = new Mat(m, roi);
         using var u8 = new Mat();
         patch.ConvertTo(u8, MatType.CV_8U);
@@ -172,7 +228,7 @@ public static class Dbg
             var cells = new List<string>();
             for (int x = 0; x < cols; x++)
                 cells.Add(u8.At<byte>(y, x).ToString().PadLeft(4));
-            Console.WriteLine("    " + string.Join("", cells));
+            Out("    " + string.Join("", cells));
         }
     }
 
