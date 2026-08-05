@@ -2,6 +2,10 @@
 
 Console app C# dùng OpenCvSharp4 để dò vùng và cắt ảnh, có sẵn công cụ debug xem ảnh từng bước.
 
+> 📐 **[docs/TU_DUY_MACHINE_VISION.md](docs/TU_DUY_MACHINE_VISION.md)** — phân tích hiện trạng pipeline,
+> phản biện hướng xoay ảnh bằng ApproxPolyDP, và tư duy machine vision cổ điển cho bài toán
+> phát hiện sứt mẻ 1-2mm. Đọc trước khi sửa thuật toán.
+
 ## Chạy
 
 ```powershell

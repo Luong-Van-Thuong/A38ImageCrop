@@ -83,7 +83,8 @@ public static class Config
     /// THƯ MỤC ảnh đầu vào — điền vào đây thì chương trình chạy LẦN LƯỢT TỪNG ẢNH trong đó,
     /// và <see cref="InputImagePath"/> bị BỎ QUA (muốn quay lại chạy 1 ảnh thì để trống "").
     /// </summary>
-    public static string InputFolderPath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\img_all\\1";
+    //public static string InputFolderPath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\Sut_mat";
+    public static string InputFolderPath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\not_found";
 
     /// <summary>Đuôi file được coi là ảnh khi quét thư mục.</summary>
     public static string[] ImageExtensions = { ".bmp", ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
@@ -165,15 +166,16 @@ public static class Program
     // Đừng nhầm với thư mục Dbg.OutDir ("debug_out"): thư mục đó bị Dbg.Reset()
     // XOÁ SẠCH mỗi lần chạy ảnh mới, chỉ dùng để soi bước trung gian.
     // Ảnh ở đây là kết quả cần giữ lại nên ghi sang "output" và đặt tên theo ảnh gốc.
-    private static readonly string _outDirG2 = "img_train__";
+    private static readonly string _outDirG2 = "Thieu_thiec_Done";
 
     //Folder chua anh khong bat duoc phan nho
-    private static readonly string _outDirNotFound = "img_not_found";
+    private static readonly string _outDirNotFound = "Thieu_thiec_not_found";
 
     // [ThreadStatic]: bốn luồng chạy bốn ảnh khác nhau cùng lúc, mà tên file lại dựng
     // từ hai biến này. Để static thường thì luồng B ghi đè _baseName của luồng A giữa chừng
     // -> ảnh của ảnh A mang tên ảnh B, và bộ đếm nhảy loạn. Lỗi kiểu này không crash,
     // chỉ ra kết quả sai, nên rất khó phát hiện — phải chặn ngay từ khai báo.
+
     [ThreadStatic] private static string? _baseName;
     [ThreadStatic] private static int _demAnhG2;
 
@@ -442,6 +444,9 @@ public static class Program
 
         // ---- Giai đoạn 1: dò và cắt vùng lớn nhất (cả con hàng) ra khỏi ảnh gốc.
         using var result = CropLargestRegion(src);
+        Dbg.Show(result, "Anh sau khi cat");
+
+
 
         // >>> SỬA LỖI: câu check null này PHẢI đứng TRƯỚC lời gọi CropSmallRegion.
         // Code cũ gọi CropSmallRegion(result) trong khi result vẫn có thể là null,
@@ -467,7 +472,7 @@ public static class Program
         {
             var gocBatDuoc = cacGoc.Where(g => g.Anh is not null).ToList();
 
-            if (gocBatDuoc.Count == 0)
+            if (gocBatDuoc.Count != 2)
             {
                 Dbg.Info("  Giai doan 2: Ca 4 goc deu chua bat duoc phan nho " +
                          "(xem log 'ratio mask' va anh 6_Residual cua tung goc).");
@@ -524,8 +529,7 @@ public static class Program
         // --- B4: dò cạnh.
         using var edges = new Mat();
         // Điều chỉnh cạnh CannyLow và CannyHigh sang số kahcs thì nó như nào ảnh tìm được trả về kết quả như nào 
-        //Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
-        Cv2.Canny(blur, edges, 150, 210);
+        Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
         Dbg.Show(edges, "canny");
         // Mẹo: nonzero% ở dòng stats nói lên nhiều thứ —
         //   quá thấp (<0.5%) = ngưỡng cao quá, cạnh biến mất
@@ -536,7 +540,7 @@ public static class Program
         if (Config.MorphKernel > 0)
         {
             using var kernel = Cv2.GetStructuringElement(
-                MorphShapes.Rect, new Size(Config.MorphKernel, Config.MorphKernel));
+                MorphShapes.Rect, new Size(30, 30));
             Cv2.MorphologyEx(edges, closed, MorphTypes.Close, kernel);
             Dbg.Show(closed, "morph_close");
         }
@@ -655,7 +659,7 @@ public static class Program
 
             Dbg.Log($"Cat theo hinh chu nhat bao quanh: {full}");
             var cropped = new Mat(src, full).Clone();
-            //Dbg.Show(cropped, "result_crop");
+            Dbg.Show(cropped, "result_crop");
             return cropped;
         }
     }
@@ -818,7 +822,7 @@ public static class Program
         // mà không làm vật thể phình to ra.
         // Dùng Ellipse chứ đừng dùng Rect: hình tròn không thiên vị hướng nào,
         // nên kết quả không đổi khi vật thể đặt nghiêng.
-        using var k7 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(5, 5));
+        using var k7 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(60, 60));
         Cv2.MorphologyEx(mask, mask, MorphTypes.Close, k7, iterations: 2);
         Dbg.Show(mask, $"3_Closed_{goc}");
         var test = "";
@@ -889,6 +893,7 @@ public static class Program
         // Cv2.Subtract là phép trừ có bão hoà (kết quả âm bị kẹp về 0),
         // nên đảo ngược hai tham số sẽ ra ảnh rỗng hoàn toàn chứ không báo lỗi gì.
         Cv2.Subtract(objMask, opened, residual);
+        Dbg.Show(objMask, $"4_ObjMask_{goc}");
         Dbg.Show(residual, $"6_Residual_{goc}");
 
         // ================================================================
@@ -1328,14 +1333,14 @@ public static class Program
         using var work = mask.Clone();   // FindContours co the sua source
         Cv2.FindContours(work, out Point[][] cnts, out _,
                          RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-       // Dbg.Show(work, "find contours");
+        Dbg.Show(work, "find contours");
 
         var res = new Mat(mask.Size(), MatType.CV_8UC1, Scalar.All(0));
         if (cnts == null || cnts.Length == 0) return res;
 
         var biggest = cnts.OrderByDescending(c => Cv2.ContourArea(c)).First();
         Cv2.DrawContours(res, new[] { biggest }, -1, Scalar.All(255), -1);
-        //Dbg.Show(res, "Vung tim");
+        Dbg.Show(res, "Vung tim");
         return res;
     }
 
