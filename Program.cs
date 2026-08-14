@@ -45,7 +45,7 @@ public static class Config
 
     public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-36-30.bmp";
 
-    public static string InputFolderPath = "D:\\Images_\\SIBV\\A38\\test_crop";
+    public static string InputFolderPath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\align";
 
     public static string[] ImageExtensions = { ".bmp", ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
 
@@ -80,9 +80,9 @@ public static class ProtrusionCfg
 
 public static class Program
 {
-    private static readonly string _outDirG2 = "Thieu_thiec_Done";
+    private static readonly string _outDirG2 = "ok_all";
 
-    private static readonly string _outDirNotFound = "Thieu_thiec_not_found";
+    private static readonly string _outDirNotFound = "sut_me_botton_not_found";
 
     [ThreadStatic] private static string? _baseName;
     [ThreadStatic] private static int _demAnhG2;
@@ -115,6 +115,9 @@ public static class Program
         Dbg.SaveFile = true;
 
         if (args.Contains("--debug-steps")) Config.SaveDebugStepsInBatch = true;
+
+        // Buoc 1a cua tool do mau: chi trich model tu anh master roi ve ra, khong chay pipeline cat anh.
+        if (args.Contains("--model")) return PatModel.ChayTrichModel(args);
 
         int i = Array.IndexOf(args, "--only");
         if (i >= 0 && i + 1 < args.Length) Dbg.Filter = args[i + 1];
@@ -354,7 +357,7 @@ public static class Program
     /// Pipeline chính: dò vùng lớn nhất trong ảnh rồi cắt ra.
     /// Mỗi bước đều có Dbg.Show để bạn nhìn thấy ảnh biến đổi thế nào.
     /// </summary>
-    private static Mat? CropLargestRegion(Mat src, string nameImgMain)
+    private static Mat? CropLargestRegion_Old(Mat src, string nameImgMain)
     {
         double scale = Math.Min(1.0, (double)Config.WorkWidth / src.Width);
         using var work = new Mat();
@@ -407,6 +410,7 @@ public static class Program
             Scalar color = new Scalar(bgr.Item0, bgr.Item1, bgr.Item2);
 
             Cv2.DrawContours(imgContours, contours, i, color, 2);
+            Dbg.Show(imgContours, "imgContours");
         }
         Dbg.Show(imgContours, "imgContours");
 
@@ -434,41 +438,179 @@ public static class Program
                 new Scalar(0, 255, 0), 2);
             Cv2.DrawContours(overlay, new[] { candidates[0].Contour }, -1,
                 new Scalar(0, 0, 255), 3);
+            //Cv2.DrawContours(overlay, new[] { candidates[1].Contour }, -1,
+            //    new Scalar(255, 0, 0), 3);
             Dbg.Show(overlay, "contours");
         }
 
+        //return imgContours;
         var best = candidates[0].Contour;
 
         double peri = Cv2.ArcLength(best, true);
         var approx = Cv2.ApproxPolyDP(best, Config.ApproxEpsRatio * peri, true);
+        //Dbg.Show(approx, "");
         Dbg.Log($"Xap xi da giac: {approx.Length} dinh (eps = {Config.ApproxEpsRatio * peri:0.#})");
+        var r = Cv2.BoundingRect(best);
+        int paddingFull = 20;
+        var full = new Rect(
+            (int)(r.X / scale - paddingFull), (int)(r.Y / scale - paddingFull),
+            (int)(r.Width / scale + 2 * paddingFull), (int)(r.Height / scale + 2 * paddingFull))
+            .Intersect(new Rect(0, 0, src.Width, src.Height));
 
-        if (Config.WarpIfQuad && approx.Length == 4)
+        Dbg.Log($"Cat theo hinh chu nhat bao quanh: {full}");
+        var cropped = new Mat(src, full).Clone();
+        Dbg.Show(cropped, "result_crop");
+        LuuAnhG2(cropped, _outDirG2, $"{nameImgMain}");
+        return cropped;
+
+    }
+
+
+    private static Mat? CropLargestRegion(Mat src, string nameImgMain)
+    {
+        double scale = Math.Min(1.0, (double)Config.WorkWidth / src.Width);
+        using var work = new Mat();
+        if (scale < 1.0)
+            Cv2.Resize(src, work, new Size(), scale, scale, InterpolationFlags.Area);
+        else
+            src.CopyTo(work);
+
+        using var gray = new Mat();
+
+        Cv2.CvtColor(work, gray, ColorConversionCodes.BGR2GRAY);
+        Dbg.Show(gray, "gray");
+
+        using var blur = new Mat();
+
+        Cv2.GaussianBlur(gray, blur, new Size(Config.BlurKernel, Config.BlurKernel), 0);
+        Dbg.Show(blur, "blur");
+
+        using var edges = new Mat();
+        Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
+        Dbg.Show(edges, "canny");
+
+        using var closed = new Mat();
+        
+        if (Config.MorphKernel > 0)
         {
-            var corners = OrderCorners(approx.Select(p =>
-                new Point2f((float)(p.X / scale), (float)(p.Y / scale))).ToArray());
+            using var kernel = Cv2.GetStructuringElement(
+                MorphShapes.Rect, new Size(30, 30));
+            Cv2.MorphologyEx(edges, closed, MorphTypes.Close, kernel);
+            Dbg.Show(closed, "morph_close");
 
-            foreach (var c in corners) Dbg.Log($"  goc: ({c.X:0}, {c.Y:0})");
 
-            var warped = WarpToRect(src, corners);
-            return warped;
+
         }
         else
         {
-            var r = Cv2.BoundingRect(best);
-            int paddingFull = 20;
-            var full = new Rect(
-                (int)(r.X / scale - paddingFull), (int)(r.Y / scale - paddingFull),
-                (int)(r.Width / scale + 2*paddingFull) , (int)(r.Height / scale + 2*paddingFull))
-                .Intersect(new Rect(0, 0, src.Width, src.Height));
-
-            Dbg.Log($"Cat theo hinh chu nhat bao quanh: {full}");
-            var cropped = new Mat(src, full).Clone();
-            Dbg.Show(cropped, "result_crop");
-            LuuAnhG2(cropped, _outDirNotFound, $"{nameImgMain}");
-            return cropped;
+            edges.CopyTo(closed);
         }
+
+        Cv2.FindContours(closed, out Point[][] contours, out _,
+            RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+        Dbg.Show(closed, "ApproxSimple");
+
+        int cint = 10;
+        using var closed_ = new Mat();
+        using var kernel_ = Cv2.GetStructuringElement(
+            MorphShapes.Rect, new Size(30, 30));
+        Cv2.MorphologyEx(edges, closed_, MorphTypes.Close, kernel_);
+        Dbg.Show(closed_, "morph_close");
+
+        Cv2.FindContours(closed_, out Point[][] contours_, out HierarchyIndex[] outPutIndex,
+            RetrievalModes.Tree, ContourApproximationModes.ApproxNone);
+        Dbg.Show(closed_, "ApproxNone");
+        int intParent = 0;
+        int maxArea = 0;
+        double mArea = 1;
+        // Tìm xem contours ngoài cùng là ai
+        for(int intCheckPar = 0; intCheckPar < contours_.Length; intCheckPar++)
+        {
+            if (outPutIndex[intCheckPar].Parent == -1)
+            {
+                double maxA = Cv2.ContourArea(contours_[intCheckPar]);
+                if (maxA > mArea)
+                {
+                    mArea = maxA;
+                    intParent = intCheckPar;
+                }    
+            }    
+        }
+        // Kiểm tra xem contours gần giống hình nào
+        int indexPar = intParent;
+        // Tính chu vi
+        double peri = Cv2.ArcLength(contours_[intParent], true);
+        // Xấp xi đa giác
+        double saiSo = 0.02 * peri;
+        using Mat outPutApprox = new();
+        Point[] approx = Cv2.ApproxPolyDP(contours_[intParent], saiSo, true);
+        int soDinh = approx.Length;
+        Rect rect = Cv2.BoundingRect(approx);
         
+        //var imgContours = gray.Clone();
+        //Cv2.CvtColor(imgContours, imgContours, ColorConversionCodes.GRAY2BGR);
+        //for (int i = 0; i < contours.Length; i++)
+        //{
+        //    byte hue = (byte)(i * 179 / contours.Length);
+        //    using Mat hsvPixel = new Mat(1, 1, MatType.CV_8UC3, new Scalar(hue, 255, 255));
+        //    using Mat bgrPixel = new Mat();
+
+        //    Cv2.CvtColor(hsvPixel, bgrPixel, ColorConversionCodes.HSV2BGR);
+        //    Vec3b bgr = bgrPixel.At<Vec3b>(0, 0);
+        //    Scalar color = new Scalar(bgr.Item0, bgr.Item1, bgr.Item2);
+
+        //    Cv2.DrawContours(imgContours, contours, i, color, 2);
+        //    Dbg.Show(imgContours, "imgContours");
+        //}
+        //Dbg.Show(imgContours, "imgContours");
+
+        //double imageArea = work.Width * (double)work.Height;
+        //var candidates = contours
+        //    .Select(c => (Contour: c, Area: Cv2.ContourArea(c)))
+        //    .Where(x => x.Area >= imageArea * Config.MinAreaRatio)
+        //    .OrderByDescending(x => x.Area)
+        //    .ToList();
+
+        //Dbg.Log($"con {candidates.Count} contour sau khi loc dien tich " +
+        //        $"(>= {Config.MinAreaRatio:P0} anh = {imageArea * Config.MinAreaRatio:0} px)");
+
+        //if (candidates.Count == 0) return null;
+
+        //foreach (var (_, area) in candidates.Take(5))
+        //{
+        //    Dbg.Log($"  - dien tich {area:0} px ({area / imageArea:P1} anh)");
+        //}
+
+        //if (Dbg.Enabled)
+        //{
+        //    using var overlay = work.Clone();
+        //    Cv2.DrawContours(overlay, candidates.Select(x => x.Contour).ToArray(), -1,
+        //        new Scalar(0, 255, 0), 2);
+        //    Cv2.DrawContours(overlay, new[] { candidates[0].Contour }, -1,
+        //        new Scalar(0, 0, 255), 3);
+        //    Dbg.Show(overlay, "contours");
+        //}
+        //var best = candidates[0].Contour;
+
+        //double peri = Cv2.ArcLength(best, true);
+        //var approx = Cv2.ApproxPolyDP(best, Config.ApproxEpsRatio * peri, true);
+        ////Dbg.Show(approx, "");
+        //Dbg.Log($"Xap xi da giac: {approx.Length} dinh (eps = {Config.ApproxEpsRatio * peri:0.#})");
+        //var r = Cv2.BoundingRect(best);
+        //int paddingFull = 20;
+        //var full = new Rect(
+        //    (int)(r.X / scale - paddingFull), (int)(r.Y / scale - paddingFull),
+        //    (int)(r.Width / scale + 2 * paddingFull), (int)(r.Height / scale + 2 * paddingFull))
+        //    .Intersect(new Rect(0, 0, src.Width, src.Height));
+
+        //Dbg.Log($"Cat theo hinh chu nhat bao quanh: {full}");
+        //var cropped = new Mat(src, full).Clone();
+        //Dbg.Show(cropped, "result_crop");
+        //LuuAnhG2(cropped, _outDirG2, $"{nameImgMain}");
+
+        using Mat haha = new();
+        return haha;
+
     }
 
     public sealed record KetQuaGoc(Goc Goc, Rect RoiTrongAnh, Rect? VungTrongRoi, Mat? Anh);
@@ -836,6 +978,7 @@ public static class Program
         using var m = Cv2.GetPerspectiveTransform(corners, dst);
         var output = new Mat();
         Cv2.WarpPerspective(src, output, m, new Size(w, h));
+        Dbg.Show(output, "");
         return output;
     }
 
