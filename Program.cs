@@ -45,6 +45,7 @@ public static class Config
 
     public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-36-30.bmp";
 
+    //public static string InputFolderPath = "D:\Images_\V2\CoilAssy\CoilAssy\1240S\opencv\align";
     public static string InputFolderPath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\align";
 
     public static string[] ImageExtensions = { ".bmp", ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
@@ -54,6 +55,9 @@ public static class Config
     public static bool SaveDebugStepsInBatch = false;
 
     public static int SoLuong = 4;
+
+    /// <summary>File Excel gom so lieu align cua ca luot chay. De rong = khong ghi.</summary>
+    public static string ExcelOutPath = "align_data_2.xlsx";
 }
 
 public static class ProtrusionCfg
@@ -192,8 +196,32 @@ public static class Program
         Console.WriteLine($"  loi                : {soLoi}");
         Console.WriteLine($"  anh ket qua nam trong: {Path.GetFullPath(_outDirG2)}");
 
+        XuatExcelAlign();
+
         Dbg.CloseAll();
         return soLoi > 0 ? 2 : 0;
+    }
+
+    /// <summary>
+    /// Ghi kho số liệu align ra Excel. Gọi đúng một lần ở cuối lượt chạy, sau khi
+    /// mọi luồng đã xong — ghi giữa chừng thì file thiếu ảnh mà lại tốn công mở/đóng.
+    /// Hỏng ở đây không được làm hỏng lượt chạy: ảnh đã cắt vẫn còn nguyên trong thư mục.
+    /// </summary>
+    private static void XuatExcelAlign()
+    {
+        if (string.IsNullOrWhiteSpace(Config.ExcelOutPath)) return;
+
+        try
+        {
+            var duongDan = ExcelAlign.XuatFile(Config.ExcelOutPath);
+            Console.WriteLine(duongDan is null
+                ? "  excel align         : khong co dong nao de ghi"
+                : $"  excel align ({ExcelAlign.SoDong} dong): {duongDan}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  excel align         : ghi that bai - {ex.Message}");
+        }
     }
 
     private static readonly object _khoaConsole = new();
@@ -489,6 +517,10 @@ public static class Program
         Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
         Dbg.Show(edges, "canny");
 
+        using var edges_ = new Mat();
+        Cv2.Canny(blur, edges_, 20, 50);
+        Dbg.Show(edges_, "canny");
+        SaveImage(edges_, @"D:\Images_\V2\CoilAssy\CoilAssy\1240S\opencv\test", "edges");
         using var closed = new Mat();
         
         if (Config.MorphKernel > 0)
@@ -497,8 +529,6 @@ public static class Program
                 MorphShapes.Rect, new Size(30, 30));
             Cv2.MorphologyEx(edges, closed, MorphTypes.Close, kernel);
             Dbg.Show(closed, "morph_close");
-
-
 
         }
         else
@@ -523,6 +553,7 @@ public static class Program
         int intParent = 0;
         int maxArea = 0;
         double mArea = 1;
+
         // Tìm xem contours ngoài cùng là ai
         for(int intCheckPar = 0; intCheckPar < contours_.Length; intCheckPar++)
         {
@@ -536,6 +567,7 @@ public static class Program
                 }    
             }    
         }
+
         // Kiểm tra xem contours gần giống hình nào
         int indexPar = intParent;
         // Tính chu vi
@@ -544,9 +576,42 @@ public static class Program
         double saiSo = 0.02 * peri;
         using Mat outPutApprox = new();
         Point[] approx = Cv2.ApproxPolyDP(contours_[intParent], saiSo, true);
-        int soDinh = approx.Length;
-        Rect rect = Cv2.BoundingRect(approx);
-        
+        RotatedRect minRect = Cv2.MinAreaRect(approx);
+
+        float realAngle = minRect.Angle;
+        float widthRect = minRect.Size.Width;
+        float heightRect = minRect.Size.Height;
+
+        if(widthRect>heightRect)
+        {
+            realAngle = realAngle + 90;
+        }
+
+        // Chi GOM so lieu vao bo nho, cuoi Main moi ghi ra mot file Excel duy nhat.
+        ThemDuLieuAlign(nameImgMain, src, scale, contours_.Length, intParent,
+                        contours_[intParent], mArea, peri, approx, minRect, realAngle);
+
+
+
+
+
+
+
+
+
+        //int soDinh = approx.Length;
+        //Rect rect = Cv2.BoundingRect(approx);
+
+
+
+
+
+
+
+
+
+
+
         //var imgContours = gray.Clone();
         //Cv2.CvtColor(imgContours, imgContours, ColorConversionCodes.GRAY2BGR);
         //for (int i = 0; i < contours.Length; i++)
@@ -611,6 +676,81 @@ public static class Program
         using Mat haha = new();
         return haha;
 
+    }
+
+    /// <summary>
+    /// Gom số liệu align của MỘT ảnh vào kho <see cref="ExcelAlign"/> để cuối lượt xuất Excel.
+    ///
+    /// Hàm này chỉ ĐỌC kết quả đã đo được trong <see cref="CropLargestRegion"/>, không đo lại,
+    /// không sửa gì của mạch xử lý — bỏ lời gọi nó đi thì pipeline vẫn chạy y hệt.
+    ///
+    /// Mọi đại lượng đo trên ảnh work (đã thu nhỏ theo <paramref name="scale"/>) đều được ghi
+    /// thêm một cột quy về px ảnh gốc: dài chia scale, diện tích chia scale bình phương.
+    /// Đánh giá sai số vài chục micromet thì phải nhìn số ở hệ ảnh gốc, không nhìn ảnh work.
+    /// </summary>
+    private static void ThemDuLieuAlign(string nameImgMain, Mat src, double scale,
+                                        int soContour, int chiSoNgoai, Point[] contourNgoai,
+                                        double dienTich, double chuVi, Point[] approx,
+                                        RotatedRect minRect, double gocThuc)
+    {
+        if (string.IsNullOrWhiteSpace(Config.ExcelOutPath)) return;
+
+        // Đường tròn nhỏ nhất bao contour ngoài: tâm của nó là "vị trí đường tròn"
+        // dùng để so lệch tâm giữa các ảnh; bán kính cho biết con hàng to nhỏ khác nhau bao nhiêu.
+        Cv2.MinEnclosingCircle(contourNgoai, out Point2f tamTron, out float banKinh);
+
+        double canhDai = Math.Max(minRect.Size.Width, minRect.Size.Height);
+        double canhNgan = Math.Min(minRect.Size.Width, minRect.Size.Height);
+        double nghichScale = scale > 0 ? 1.0 / scale : 1.0;
+
+        ExcelAlign.Them(new DongAlign
+        {
+            TenAnh = nameImgMain,
+
+            RongAnhGoc = src.Width,
+            CaoAnhGoc = src.Height,
+            Scale = scale,
+
+            SoContour = soContour,
+            ChiSoContourNgoai = chiSoNgoai,
+            DienTich = dienTich,
+            DienTichGoc = dienTich * nghichScale * nghichScale,
+            ChuVi = chuVi,
+            ChuViGoc = chuVi * nghichScale,
+            SoDinhApprox = approx.Length,
+            DoTron = chuVi > 0 ? 4 * Math.PI * dienTich / (chuVi * chuVi) : 0,
+
+            TamX = minRect.Center.X,
+            TamY = minRect.Center.Y,
+            TamXGoc = minRect.Center.X * nghichScale,
+            TamYGoc = minRect.Center.Y * nghichScale,
+            RongRect = minRect.Size.Width,
+            CaoRect = minRect.Size.Height,
+            RongRectGoc = minRect.Size.Width * nghichScale,
+            CaoRectGoc = minRect.Size.Height * nghichScale,
+            //if(minRect.Size.Width > minRect.Size.Height)
+            //{
+            //    GocRaw = minRect.Angle;
+            //}
+            //else
+            //{
+            //    GocRaw = minRect.Angle + 90;
+            //}
+            //GocRaw = (minRect.Size.Width > minRect.Size.Height) ? minRect.Angle : minRect.Angle + 90,
+            GocRaw = minRect.Angle,
+            GocThuc = gocThuc,
+            TySoCanh = canhNgan > 0 ? canhDai / canhNgan : 0,
+
+            TronX = tamTron.X,
+            TronY = tamTron.Y,
+            BanKinh = banKinh,
+            TronXGoc = tamTron.X * nghichScale,
+            TronYGoc = tamTron.Y * nghichScale,
+            BanKinhGoc = banKinh * nghichScale
+        });
+
+        Dbg.Log($"Excel: tam rect=({minRect.Center.X:0.00},{minRect.Center.Y:0.00}) " +
+                $"goc thuc={gocThuc:0.00} do, tam tron=({tamTron.X:0.00},{tamTron.Y:0.00}) r={banKinh:0.00}");
     }
 
     public sealed record KetQuaGoc(Goc Goc, Rect RoiTrongAnh, Rect? VungTrongRoi, Mat? Anh);
@@ -1084,6 +1224,31 @@ public static class Program
         Cv2.DrawContours(res, new[] { biggest }, -1, Scalar.All(255), -1);
         Dbg.Show(res, "Vung tim");
         return res;
+    }
+
+
+    public static bool SaveImage(Mat image, string directoryPath, string prefix = "canny")
+    {
+        if (image == null || image.IsDisposed || image.Empty())
+            return false;
+
+        try
+        {
+            if (!Directory.Exists(directoryPath))
+                Directory.CreateDirectory(directoryPath);
+
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+            string fileName = $"{prefix}_{timestamp}.bmp";
+            string fullPath = Path.Combine(directoryPath, fileName);
+
+            // Ghi ảnh trực tiếp (Block thread hiện tại)
+            return Cv2.ImWrite(fullPath, image);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SaveImage Error]: {ex.Message}");
+            return false;
+        }
     }
 
 }
