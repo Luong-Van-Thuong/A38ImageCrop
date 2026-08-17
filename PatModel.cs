@@ -270,15 +270,20 @@ public static class PatModel
         Cv2.Resize(thanCat, care, kt, 0, 0, InterpolationFlags.Area);
         Cv2.Threshold(care, care, 127, 255, ThresholdTypes.Binary);
         Cv2.Dilate(care, care, Dia(ModelCfg.NoiRongThanTheoMuc));
+        Dbg.Show(care, $"Care {kt.Width}x{kt.Height}", true);
 
         using var dongL = new Mat();
         Cv2.Resize(dongCat, dongL, kt, 0, 0, InterpolationFlags.Area);
         Cv2.Threshold(dongL, dongL, 127, 255, ThresholdTypes.Binary);
+        Dbg.Show(dongL, $"Dong {kt.Width}x{kt.Height}", true);
         if (Cv2.CountNonZero(dongL) > 0)
         {
             using var khongDong = new Mat();
             Cv2.BitwiseNot(dongL, khongDong);
+            Dbg.Show(khongDong, $"Khong dong {kt.Width}x{kt.Height}", true);
             Cv2.BitwiseAnd(care, khongDong, care);
+            Dbg.Show(care, $"Care - Dong {kt.Width}x{kt.Height}", true);
+
         }
 
         return care;
