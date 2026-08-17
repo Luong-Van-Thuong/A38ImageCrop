@@ -16,6 +16,7 @@ public static class ModelCfg
     public static string AnhMaster = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\1B.bmp";
 
     /// <summary>Vùng khoanh trên ảnh master. null = tự lấy theo thân vật.</summary>
+    //public static Rect? VungKhoanh = new Rect(675, 155, 178, 154);
     public static Rect? VungKhoanh = null;
 
     /// <summary>Số mức kim tự tháp. 7 mức = L0 (1/1) đến L6 (1/64).</summary>
@@ -433,6 +434,7 @@ public static class PatModel
 
         var ngoai = cts.OrderByDescending(c => Cv2.ContourArea(c)).First();
         Cv2.DrawContours(than, new[] { Cv2.ConvexHull(ngoai) }, -1, Scalar.All(255), -1);
+        Dbg.Show(than, "Than", true);
         return than;
     }
 

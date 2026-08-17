@@ -75,3 +75,9 @@ Dòng stats in ra kiểu:
 
 Không tìm được contour nào thì giảm `Config.MinAreaRatio`.
 Contour bắt đúng vùng nhưng `approxPolyDP` không ra 4 đỉnh thì tăng `Config.ApproxEpsRatio` (0.02 → 0.03).
+
+```
+Phần có thể cái tiến thêm
+chưa cần NCC (TM_CCOEFF_NORMED), distance transform, gradient/Sobel, kim tự tháp, ICP, gradient descent
+Đó là lý do tồn tại của mọi kỹ thuật tăng tốc mà bạn sẽ gặp: kim tự tháp (quét thô trước để khỏi phải quét tinh khắp nơi), tích chập qua FFT, ảnh tích phân.
+```

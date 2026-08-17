@@ -123,6 +123,10 @@ public static class Program
         // Buoc 1a cua tool do mau: chi trich model tu anh master roi ve ra, khong chay pipeline cat anh.
         if (args.Contains("--model")) return PatModel.ChayTrichModel(args);
 
+        // Bai hoc do mau ban tho: chay tung buoc mot de hieu shape-based tu goc.
+        if (args.Contains("--hoc")) 
+            return HocDoMau.Chay(args);
+
         int i = Array.IndexOf(args, "--only");
         if (i >= 0 && i + 1 < args.Length) Dbg.Filter = args[i + 1];
 
@@ -518,7 +522,7 @@ public static class Program
         Dbg.Show(edges, "canny");
 
         using var edges_ = new Mat();
-        Cv2.Canny(blur, edges_, 20, 50);
+        Cv2.Canny(blur, edges_, 5, 50);
         Dbg.Show(edges_, "canny");
         SaveImage(edges_, @"D:\Images_\V2\CoilAssy\CoilAssy\1240S\opencv\test", "edges");
         using var closed = new Mat();
