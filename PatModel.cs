@@ -61,6 +61,7 @@ public static class ModelCfg
 
     /// <summary>Ngưỡng (R - B) để nhận ra màu đồng. Bền hơn HSV khi ảnh bị cháy sáng.</summary>
     public static int NguongDongRB = 25;
+    public static int NguongSangBac = 150;
 
     /// <summary>
     /// Mở (opening) vùng đồng trước khi nới rộng, để xoá các vệt viền mảnh.
@@ -71,7 +72,7 @@ public static class ModelCfg
     /// quý nhất — đo được ở ảnh 1B mức L3: 2581 pixel biên mà chỉ 106 lọt vào vùng
     /// quan tâm. Vệt quang sai rộng 1-3px, cuộn dây rộng hàng chục px, nên mở là tách được.
     /// </summary>
-    public static int MoVungDong = 8;
+    public static int MoVungDong = 3;
 
     // Phải phân loại mọi bán kính morphology thành hai nhóm, lẫn lộn là hỏng — và
     // hỏng theo hai kiểu ngược nhau, cả hai đều đã đo được:
@@ -240,7 +241,7 @@ public static class PatModel
         using var dongCat = new Mat(dong, vung);
 
         var model = new ModelDoMau { TenMaster = ten, VungKhoanh = vung };
-
+        // phần kim tự tháp giảm dần
         for (int muc = 0; muc < ModelCfg.SoMuc; muc++)
         {
             double tiLe = 1.0 / (1 << muc);
@@ -297,25 +298,32 @@ public static class PatModel
 
         using var dx = new Mat();
         using var dy = new Mat();
+        // Tính toán xem tích vô hướng với mỗi kernel 3*3 của ảnh gốc trả về giá trị ở mỗi pixel như nào 
+        // Tính theo dx
         Cv2.Sobel(mo, dx, MatType.CV_32F, 1, 0, 3);
+        // Tính theo dy
         Cv2.Sobel(mo, dy, MatType.CV_32F, 0, 1, 3);
-
+        // aCare chuyển ảnh toàn bộ vật màu trắng, phần đồng nhô ra màu đen background màu đen mảng 2D về 1D
         care.GetArray(out byte[] aCare);
+        // aDx, aDy chuyển ảnh gradient theo dx, dy về mảng 1D, giá trị của từng pixel là bao nhiêu
         dx.GetArray(out float[] aDx);
         dy.GetArray(out float[] aDy);
-
+        // Tính ngưỡng Canny từ chính ảnh: hạ dần ngưỡng cho tới khi số pixel gradient mạnh
         var (thap, cao) = NguongTuTinh(aDx, aDy, aCare, anh.Width + anh.Height);
 
         // Canny chỉ để CHỌN pixel nào là biên (nó đã làm non-max suppression sẵn).
         // Còn hướng gradient thì lấy từ Sobel, vì Canny không trả ra hướng.
         using var bien = new Mat();
         Cv2.Canny(mo, bien, thap, cao);
+        Dbg.Show(bien, $"Bien muc {muc} ti le 1/{1 << muc}", true);
+        // Chuyển đổi ảnh sau Canny sang mảng 1D, giá trị của từng pixel là 0 hoặc 255
         bien.GetArray(out byte[] aBien);
 
         int w = anh.Width, h = anh.Height;
 
         // Gom ứng viên: là biên, nằm trong vùng quan tâm, và gradient không quá yếu.
         var ungVien = new List<(int Idx, float Mag)>();
+        // Tính khoảng cách của các điểm nếu lớn hơn 0 thì là điểm cần tìm
         for (int idx = 0; idx < aBien.Length; idx++)
         {
             if (aBien[idx] == 0 || aCare[idx] == 0) continue;
@@ -329,7 +337,8 @@ public static class PatModel
         // Không làm thế thì một vùng nhiều nhiễu sẽ chiếm hết chỗ và model
         // mất cân đối — phần lớn điểm dồn vào một góc, đòn bẩy góc coi như mất.
         ungVien.Sort((a, b) => b.Mag.CompareTo(a.Mag));
-
+        // oLuoi = 3
+        
         int oLuoi = Math.Max(1, ModelCfg.KhoangCachDiem);
         int cotLuoi = (w + oLuoi - 1) / oLuoi;
         var daChiem = new bool[cotLuoi * ((h + oLuoi - 1) / oLuoi)];
@@ -337,10 +346,11 @@ public static class PatModel
         float cx = w / 2f, cy = h / 2f;
         var diem = new List<DiemModel>();
         float banKinh = 0;
-
+        int soDiemMax = (int)Math.Ceiling(Math.Sqrt(w * h / (double)ModelCfg.SoDiemToiDa));
         foreach (var (idx, mag) in ungVien)
         {
-            if (diem.Count >= ModelCfg.SoDiemToiDa) break;
+            // if (diem.Count >= ModelCfg.SoDiemToiDa) break;
+            if (diem.Count >= soDiemMax) break;
 
             int x = idx % w, y = idx / w;
             int o = (y / oLuoi) * cotLuoi + (x / oLuoi);
@@ -391,10 +401,13 @@ public static class PatModel
         var hist = new int[SoBin + 1];
         long tong = 0;
 
+        // kiểm tra xem giá trị ở pixel đó thuộc vùng có giá trị bao nhiêu
         for (int i = 0; i < aCare.Length; i++)
         {
             if (aCare[i] == 0) continue;
             int m = (int)(MathF.Abs(aDx[i]) + MathF.Abs(aDy[i]));
+            // Nếu m > SoBin thì tăng giá trị của vị trí SoBin
+            // Nếu m < SoBin thì tăng giá trị của vị trí m
             hist[m > SoBin ? SoBin : m]++;
             tong++;
         }
@@ -404,9 +417,11 @@ public static class PatModel
         long can = Math.Min((long)(tong * ModelCfg.TiLeBienToiDa), (long)(ModelCfg.HeSoMatDoBien * chuVi));
         long dem = 0;
         int muc = SoBin;
+        // Cộng từ trên 2047 xuống đến khi tổng số pixel gradient mạnh đạt hạn ngạch can
         while (muc > 1 && dem < can) dem += hist[muc--];
 
         double cao = Math.Max(ModelCfg.NguongBienToiThieu, muc);
+        // Tìm được giá trị của những phần tử cao nhất
         return (cao * ModelCfg.CannyTiLeThap, cao);
     }
 

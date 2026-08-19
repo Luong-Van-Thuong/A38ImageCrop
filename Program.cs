@@ -1,6 +1,7 @@
 using OpenCvSharp;
 using OpenCvSharp.XImgProc;
 using OpenCvSharp.XPhoto;
+using System.Diagnostics.Metrics;
 using System.Net.WebSockets;
 using System.Runtime.Intrinsics.X86;
 
@@ -45,8 +46,11 @@ public static class Config
 
     public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-36-30.bmp";
 
-    //public static string InputFolderPath = "D:\Images_\V2\CoilAssy\CoilAssy\1240S\opencv\align";
-    public static string InputFolderPath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\align";
+    
+    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh1";
+    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh2";
+    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\Ng";
+    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\Ng_";
 
     public static string[] ImageExtensions = { ".bmp", ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
 
@@ -84,7 +88,7 @@ public static class ProtrusionCfg
 
 public static class Program
 {
-    private static readonly string _outDirG2 = "ok_all";
+    private static readonly string _outDirG2 = "imgCheck";
 
     private static readonly string _outDirNotFound = "sut_me_botton_not_found";
 
@@ -121,7 +125,8 @@ public static class Program
         if (args.Contains("--debug-steps")) Config.SaveDebugStepsInBatch = true;
 
         // Buoc 1a cua tool do mau: chi trich model tu anh master roi ve ra, khong chay pipeline cat anh.
-        if (args.Contains("--model")) return PatModel.ChayTrichModel(args);
+        if (args.Contains("--model")) 
+            return PatModel.ChayTrichModel(args);
 
         // Bai hoc do mau ban tho: chay tung buoc mot de hieu shape-based tu goc.
         if (args.Contains("--hoc")) 
@@ -496,190 +501,778 @@ public static class Program
         return cropped;
 
     }
+    private static Mat Dia(int r) =>
+    Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(2 * r + 1, 2 * r + 1));
+    private static Mat VungDong(Mat src)
+    {
+        var dong = Mat.Zeros(src.Size(), MatType.CV_8UC1).ToMat();
+        if (!ModelCfg.DongLaDontCare || src.Channels() < 3) return dong;
+
+        var kenh = Cv2.Split(src);
+        using var hieu = new Mat();
+        Cv2.Subtract(kenh[2], kenh[0], hieu);            // R - B
+        foreach (var c in kenh) c.Dispose();
+
+        Cv2.Threshold(hieu, dong, ModelCfg.NguongDongRB, 255, ThresholdTypes.Binary);
+        //Dbg.Show(hieu, "hieu");
+        if (ModelCfg.MoVungDong > 0)
+        {
+            Cv2.MorphologyEx(dong, dong, MorphTypes.Open, Dia(ModelCfg.MoVungDong));
+            //Dbg.Show(dong, "dong");
+        }      
+        if (ModelCfg.NoiRongDontCare > 0)
+        {
+            Cv2.Dilate(dong, dong, Dia(ModelCfg.NoiRongDontCare));
+            //Dbg.Show(dong, "dong");
+        }    
+            
+        return dong;
+    }
+    private static Mat VungDong_2(Mat src)
+    {
+        int nguongDong = 5;
+        var dong = Mat.Zeros(src.Size(), MatType.CV_8UC1).ToMat();
+        if (!ModelCfg.DongLaDontCare || src.Channels() < 3) return dong;
+
+        var kenh = Cv2.Split(src);
+        using var hieu = new Mat();
+        Cv2.Subtract(kenh[2], kenh[0], hieu);            // R - B
+        foreach (var c in kenh) c.Dispose();
+
+        Cv2.Threshold(hieu, dong, nguongDong, 255, ThresholdTypes.Binary);
+        //Dbg.Show(hieu, "hieu");
+        if (ModelCfg.MoVungDong > 0)
+        {
+            Cv2.MorphologyEx(dong, dong, MorphTypes.Open, Dia(ModelCfg.MoVungDong));
+            //Dbg.Show(dong, "dong");
+        }
+        if (ModelCfg.NoiRongDontCare > 0)
+        {
+            Cv2.Dilate(dong, dong, Dia(ModelCfg.NoiRongDontCare));
+            //Dbg.Show(dong, "dong");
+        }
+
+        return dong;
+    }
+
+    private static Mat VungTrangBac_Gray(Mat src)
+    {
+        var mask = Mat.Zeros(src.Size(), MatType.CV_8UC1).ToMat();
+        if (src.Empty()) return mask;
+
+        using var binaryTho = new Mat();
+
+        if (src.Channels() == 3)
+        {
+            // 1. Tách kênh an toàn
+            Mat[] kenh = Cv2.Split(src);
+
+            using (kenh[0]) // Kênh B
+            using (kenh[1]) // Kênh G
+            using (kenh[2]) // Kênh R
+            using (var hieuBR = new Mat())
+            {
+                // B - R: Nền vàng R > B => ra 0, Kim loại B >= R => ra giá trị > 0
+                Cv2.Subtract(kenh[0], kenh[2], hieuBR);
+
+                // Phân ngưỡng trên ma trận hiệu
+                Cv2.Threshold(hieuBR, binaryTho, 15, 255, ThresholdTypes.Binary);
+                //Dbg.Show(hieuBR, "a");
+            } // Hết block using này, 3 kênh kenh[0..2] và hieuBR mới được Dispose an toàn!
+        }
+        else
+        {
+            Cv2.Threshold(src, binaryTho, 100, 255, ThresholdTypes.Binary | ThresholdTypes.Otsu);
+        }
+
+        // 2. Morphology CLOSE: Nối liền các vết nứt xước
+        int kSize = ModelCfg.MoVungDong > 0 ? ModelCfg.MoVungDong : 7;
+        using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(kSize, kSize));
+        using var closed = new Mat();
+        Cv2.MorphologyEx(binaryTho, closed, MorphTypes.Close, kernelClose);
+        //Dbg.Show(binaryTho, "a");
+        //Dbg.Show(closed, "a");
+        //Dbg.Show(src, "a");
+
+
+        using var matDen = new Mat();
+        Cv2.CvtColor(src, matDen, ColorConversionCodes.BGR2GRAY);
+        Cv2.Threshold(matDen, matDen, 70, 255, ThresholdTypes.Binary);
+        //Dbg.Show(matDen, "a");
+        // 3. FILL HOLES: Lấy Contour ngoài cùng và vẽ đặc ruột
+        Cv2.FindContours(
+            closed,
+            out Point[][] contours,
+            out HierarchyIndex[] hierarchy,
+            RetrievalModes.External,
+            ContourApproximationModes.ApproxSimple
+        );
+
+        for (int i = 0; i < contours.Length; i++)
+        {
+            double area = Cv2.ContourArea(contours[i]);
+            if (area > 200) // Lọc nhiễu vụn
+            {
+                Cv2.DrawContours(mask, contours, i, Scalar.White, -1); // -1: Fill đặc
+                //Dbg.Show(mask, "a");
+            }
+        }
+
+        // 4. Dilate nếu cần nới rộng Don't Care
+        if (ModelCfg.NoiRongDontCare > 0)
+        {
+            Cv2.Dilate(mask, mask, Dia(ModelCfg.NoiRongDontCare));
+        }
+        //Dbg.Show(mask, "a");
+        //LuuAnhG2(mask, _outDirG2, $"anh1");
+
+       // Dbg.Show(matDen, "a");
+        //LuuAnhG2(matDen, _outDirG2, $"anh2");
+        using Mat result = new Mat();
+        Cv2.BitwiseAnd(matDen, mask, mask);
+        //Dbg.Show(result, "a");
+
+        Cv2.BitwiseNot(mask, mask);
+        //Dbg.Show(result, "a");
+        return mask;
+    }
+
+    private static Mat VungTrangBac_Gray_(Mat src)
+    {
+        var mask = Mat.Zeros(src.Size(), MatType.CV_8UC1).ToMat();
+        if (src.Empty()) return mask;
+
+        using var binaryTho = new Mat();
+
+        if (src.Channels() == 3)
+        {
+            // 1. Tách kênh an toàn
+            Mat[] kenh = Cv2.Split(src);
+
+            using (kenh[0]) // Kênh B
+            using (kenh[1]) // Kênh G
+            using (kenh[2]) // Kênh R
+            using (var hieuBR = new Mat())
+            {
+                // B - R: Nền vàng R > B => ra 0, Kim loại B >= R => ra giá trị > 0
+                Cv2.Subtract(kenh[0], kenh[2], hieuBR);
+
+                // Phân ngưỡng trên ma trận hiệu
+                Cv2.Threshold(hieuBR, binaryTho, 50, 255, ThresholdTypes.Binary);
+                Dbg.Show(hieuBR, "a");
+            } // Hết block using này, 3 kênh kenh[0..2] và hieuBR mới được Dispose an toàn!
+        }
+        else
+        {
+            Cv2.Threshold(src, binaryTho, 100, 255, ThresholdTypes.Binary | ThresholdTypes.Otsu);
+        }
+
+        // 2. Morphology CLOSE: Nối liền các vết nứt xước
+        int kSize = 1;
+        using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(kSize, kSize));
+        using var closed = new Mat();
+        Cv2.MorphologyEx(binaryTho, closed, MorphTypes.Close, kernelClose);
+        Dbg.Show(binaryTho, "a");
+        Dbg.Show(closed, "a");
+        Dbg.Show(src, "a");
+
+
+        //using var matDen = new Mat();
+        //Cv2.CvtColor(src, matDen, ColorConversionCodes.BGR2GRAY);
+        //Cv2.Threshold(matDen, matDen, 70, 255, ThresholdTypes.Binary);
+        //Dbg.Show(matDen, "a");
+        // 3. FILL HOLES: Lấy Contour ngoài cùng và vẽ đặc ruột
+        Cv2.FindContours(
+            closed,
+            out Point[][] contours,
+            out HierarchyIndex[] hierarchy,
+            RetrievalModes.External,
+            ContourApproximationModes.ApproxSimple
+        );
+
+        for (int i = 0; i < contours.Length; i++)
+        {
+            double area = Cv2.ContourArea(contours[i]);
+            if (area > 200) // Lọc nhiễu vụn
+            {
+                Cv2.DrawContours(mask, contours, i, Scalar.White, -1); // -1: Fill đặc
+                //Dbg.Show(mask, "a");
+            }
+        }
+
+        // 4. Dilate nếu cần nới rộng Don't Care
+        if (ModelCfg.NoiRongDontCare > 0)
+        {
+            Cv2.Dilate(mask, mask, Dia(5));
+        }
+        //Dbg.Show(mask, "a");
+        ////LuuAnhG2(mask, _outDirG2, $"anh1");
+
+        // Dbg.Show(matDen, "a");
+        ////LuuAnhG2(matDen, _outDirG2, $"anh2");
+        //using Mat result = new Mat();
+        //Cv2.BitwiseAnd(matDen, mask, mask);
+        //Dbg.Show(mask, "a");
+
+        Cv2.BitwiseNot(mask, mask);
+        Dbg.Show(mask, "a");
+        return mask;
+    }
+    public static Mat LayVungTrangLonNhat(Mat binaryInput)
+    {
+        // 1. Khởi tạo ma trận kết quả đen hoàn toàn (cùng kích thước)
+        Mat resultMask = Mat.Zeros(binaryInput.Size(), MatType.CV_8UC1).ToMat();
+
+        // 2. Tìm tất cả các contour ngoài cùng
+        Cv2.FindContours(
+            binaryInput,
+            out Point[][] contours,
+            out HierarchyIndex[] hierarchy,
+            RetrievalModes.External,
+            ContourApproximationModes.ApproxSimple
+        );
+
+        if (contours.Length == 0)
+            return resultMask;
+
+        // 3. Tìm Contour có diện tích lớn nhất
+        int maxIndex = -1;
+        double maxArea = 0;
+
+        for (int i = 0; i < contours.Length; i++)
+        {
+            double area = Cv2.ContourArea(contours[i]);
+            if (area > maxArea)
+            {
+                maxArea = area;
+                maxIndex = i;
+            }
+        }
+
+        // 4. Chỉ vẽ DUY NHẤT vùng lớn nhất lên mask kết quả (thickness = -1: Fill ruột nguyên bản)
+        if (maxIndex != -1)
+        {
+            Cv2.DrawContours(resultMask, contours, maxIndex, Scalar.White, -1);
+        }
+
+        return resultMask;
+    }
+    public static Mat LayVungDenBenTrong(Mat binarySrc)
+    {
+        // 1. d MTạo ma trận lấp đầy toàn bộ khối trắng bên ngoài (Filleask)
+        using Mat filledWhite = Mat.Zeros(binarySrc.Size(), MatType.CV_8UC1).ToMat();
+
+        // Tìm contour bao ngoài cùng (External) của khối màu trắng
+        Cv2.FindContours(
+            binarySrc,
+            out Point[][] contours,
+            out HierarchyIndex[] hierarchy,
+            RetrievalModes.External,
+            ContourApproximationModes.ApproxSimple
+        );
+
+        // Vẽ đặc toàn bộ viền ngoài để tạo khối trắng nguyên vẹn (lấp kín mọi lỗ đen bên trong)
+        for (int i = 0; i < contours.Length; i++)
+        {
+            double area = Cv2.ContourArea(contours[i]);
+            if (area > 1000) // Lọc bỏ contour vụn ở viền biên nếu có
+            {
+                Cv2.DrawContours(filledWhite, contours, i, Scalar.White, -1); // -1: Fill đặc ruột
+            }
+        }
+
+        // 2. Phép trừ ma trận: Lấy Khối Trắng Đặc trừ đi Ảnh Gốc
+        // Kết quả: Chỉ những chỗ là Đen (0) nằm bên trong ruột mới trở thành Trắng (255)
+        Mat internalBlackMask = new Mat();
+        Cv2.Subtract(filledWhite, binarySrc, internalBlackMask);
+
+        // 3. (Tùy chọn) Morphology để lọc nhiễu các đường gân xước quá nhỏ
+        // using var kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(3, 3));
+        // Cv2.MorphologyEx(internalBlackMask, internalBlackMask, MorphTypes.Open, kernel);
+
+        return internalBlackMask; // Trả về ảnh có các vùng đen bên trong nổi lên thành màu TRẮNG
+    }
 
 
     private static Mat? CropLargestRegion(Mat src, string nameImgMain)
     {
-        double scale = Math.Min(1.0, (double)Config.WorkWidth / src.Width);
+        //double scale = Math.Min(1.0, (double)Config.WorkWidth / src.Width);
         using var work = new Mat();
-        if (scale < 1.0)
-            Cv2.Resize(src, work, new Size(), scale, scale, InterpolationFlags.Area);
-        else
-            src.CopyTo(work);
+        //if (scale < 1.0)
+        //    Cv2.Resize(src, work, new Size(), scale, scale, InterpolationFlags.Area);
+        //else
+        //    src.CopyTo(work);
 
-        using var gray = new Mat();
 
-        Cv2.CvtColor(work, gray, ColorConversionCodes.BGR2GRAY);
-        Dbg.Show(gray, "gray");
 
-        using var blur = new Mat();
 
-        Cv2.GaussianBlur(gray, blur, new Size(Config.BlurKernel, Config.BlurKernel), 0);
-        Dbg.Show(blur, "blur");
 
-        using var edges = new Mat();
-        Cv2.Canny(blur, edges, Config.CannyLow, Config.CannyHigh);
-        Dbg.Show(edges, "canny");
+        using var dong = VungDong(src);
+        Dbg.Show(dong, "vungdong");
 
-        using var edges_ = new Mat();
-        Cv2.Canny(blur, edges_, 5, 50);
-        Dbg.Show(edges_, "canny");
-        SaveImage(edges_, @"D:\Images_\V2\CoilAssy\CoilAssy\1240S\opencv\test", "edges");
-        using var closed = new Mat();
-        
-        if (Config.MorphKernel > 0)
+        using Mat nonZeroPts = new();
+        Cv2.FindNonZero(dong, nonZeroPts);
+
+        Mat workSub = new();
+        if(!nonZeroPts.Empty())
         {
-            using var kernel = Cv2.GetStructuringElement(
-                MorphShapes.Rect, new Size(30, 30));
-            Cv2.MorphologyEx(edges, closed, MorphTypes.Close, kernel);
-            Dbg.Show(closed, "morph_close");
-
-        }
-        else
-        {
-            edges.CopyTo(closed);
-        }
-
-        Cv2.FindContours(closed, out Point[][] contours, out _,
-            RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-        Dbg.Show(closed, "ApproxSimple");
-
-        int cint = 10;
-        using var closed_ = new Mat();
-        using var kernel_ = Cv2.GetStructuringElement(
-            MorphShapes.Rect, new Size(30, 30));
-        Cv2.MorphologyEx(edges, closed_, MorphTypes.Close, kernel_);
-        Dbg.Show(closed_, "morph_close");
-
-        Cv2.FindContours(closed_, out Point[][] contours_, out HierarchyIndex[] outPutIndex,
-            RetrievalModes.Tree, ContourApproximationModes.ApproxNone);
-        Dbg.Show(closed_, "ApproxNone");
-        int intParent = 0;
-        int maxArea = 0;
-        double mArea = 1;
-
-        // Tìm xem contours ngoài cùng là ai
-        for(int intCheckPar = 0; intCheckPar < contours_.Length; intCheckPar++)
-        {
-            if (outPutIndex[intCheckPar].Parent == -1)
+            Rect rectRoi = Cv2.BoundingRect(nonZeroPts);
+            Rect imgBounds = new Rect(0, 0, src.Cols, src.Width);
+            Rect safeRoi = rectRoi & imgBounds;
+            if(safeRoi.Width > 0 && safeRoi.Height >0)
             {
-                double maxA = Cv2.ContourArea(contours_[intCheckPar]);
-                if (maxA > mArea)
-                {
-                    mArea = maxA;
-                    intParent = intCheckPar;
-                }    
+                workSub = new(src, safeRoi);
+
             }    
+            
         }
+        Dbg.Show(workSub, "Img Cropp");
 
-        // Kiểm tra xem contours gần giống hình nào
-        int indexPar = intParent;
-        // Tính chu vi
-        double peri = Cv2.ArcLength(contours_[intParent], true);
-        // Xấp xi đa giác
-        double saiSo = 0.02 * peri;
-        using Mat outPutApprox = new();
-        Point[] approx = Cv2.ApproxPolyDP(contours_[intParent], saiSo, true);
-        RotatedRect minRect = Cv2.MinAreaRect(approx);
+        // Vùng đồng 2
+        //using Mat dong_ = VungDong_2(workSub);
+        //Dbg.Show(dong_, "VungDong2");
+        //LuuAnhG2(dong_, _outDirG2, $"VungDong2");
 
-        float realAngle = minRect.Angle;
-        float widthRect = minRect.Size.Width;
-        float heightRect = minRect.Size.Height;
 
-        if(widthRect>heightRect)
+        // Vùng sáng bạc
+        using Mat vungSangBac = VungTrangBac_Gray(workSub);
+        Dbg.Show(vungSangBac, "VungSangBac");
+        //LuuAnhG2(vungSangBac, _outDirG2, $"VungSangBac");
+
+
+        // Lấy vùng có tụ
+        using Mat vungMlcc = LayVungDenBenTrong(vungSangBac);
+        Dbg.Show(vungMlcc, "a");
+        // Lấy vùng trắng lớn nhất
+        using Mat vungTrangLonNhat = LayVungTrangLonNhat(vungMlcc);
+        Dbg.Show(vungTrangLonNhat, "a");
+        //Loại bỏ vùng thừa
+        using var kernelLoaiVung1 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(150, 150));
+        using Mat vungMlcc2 = new();
+        Cv2.MorphologyEx(vungTrangLonNhat, vungMlcc2, MorphTypes.Open, kernelLoaiVung1);
+        Dbg.Show(vungMlcc2, "a");
+                
+        using Mat nonZeroPtsVungMlcc = new();
+        Mat vungMLCCMain = new();
+        Cv2.FindNonZero(vungMlcc2, nonZeroPtsVungMlcc);
+        if(!nonZeroPtsVungMlcc.Empty())
         {
-            realAngle = realAngle + 90;
+            Rect rawRoi = Cv2.BoundingRect(nonZeroPtsVungMlcc);
+            Rect imgBounds = new Rect(0, 0, workSub.Width, workSub.Height);
+            Rect safeRoi = rawRoi & imgBounds;
+
+            if(safeRoi.Width > 0 && safeRoi.Height>0)
+            {
+                vungMLCCMain = new Mat(workSub, safeRoi);
+
+            }    
+
         }
-
-        // Chi GOM so lieu vao bo nho, cuoi Main moi ghi ra mot file Excel duy nhat.
-        ThemDuLieuAlign(nameImgMain, src, scale, contours_.Length, intParent,
-                        contours_[intParent], mArea, peri, approx, minRect, realAngle);
+        Dbg.Show(vungMLCCMain, "VungMLCCMain");
+        LuuAnhG2(vungMLCCMain, _outDirG2, $"{nameImgMain}");
 
 
+        // Tìm tọa độ 2 vùng thiếc
+        //RotatedRect outVung = new();
+        //var aaa = TimThanTu(vungMLCCMain, 30, out outVung);
+        //var aaa_ = KiemTraCoTu(vungMLCCMain, 80);
+        //using Mat vungMLCCMainGray = new();
+        //Cv2.CvtColor(vungMLCCMain, vungMLCCMainGray, ColorConversionCodes.BGR2GRAY);
+        //Dbg.Show(vungMLCCMainGray, "gray");
+        //Cv2.GaussianBlur(vungMLCCMainGray, vungMLCCMainGray,new Size(5,5), 0.1);
+        //Dbg.Show(vungMLCCMainGray, "Blur");
+        //using Mat vungMLCCMainCanny = new();
+        //Cv2.Canny(vungMLCCMainGray, vungMLCCMainCanny, 50, 100);
+        //Dbg.Show(vungMLCCMainCanny, "cannay");
+        //using Mat grayB1_ = new();
+        ////using Mat chiChuaDong = 
+        //// Chuyển toàn bộ con hàng về đen và trắng
+        //using Mat grayB1 = new();
+        //Cv2.CvtColor(workSub, grayB1, ColorConversionCodes.BGR2GRAY);
+        //// Chuyển nhị phân
+        //using Mat binaryAllImg = new();
+        //Cv2.Threshold(grayB1, binaryAllImg, 220, 255, ThresholdTypes.Binary);
+        //Dbg.Show(binaryAllImg, "binary_All_Img");
+        //// Làm mờ
+        //using Mat lamMo = new();
+        //Cv2.GaussianBlur(workSub, lamMo, new Size(3,3), 0,3 );
+        //Dbg.Show(lamMo, "mo");
+        //// Tìm tụ
+        //using Mat cannyTu = new();
+        //Cv2.Canny(lamMo, cannyTu, 100, 200);
+        //Dbg.Show(cannyTu, "cannyTu");
 
-
-
-
-
-
-
-        //int soDinh = approx.Length;
-        //Rect rect = Cv2.BoundingRect(approx);
-
-
-
-
-
-
-
-
-
-
-
-        //var imgContours = gray.Clone();
-        //Cv2.CvtColor(imgContours, imgContours, ColorConversionCodes.GRAY2BGR);
-        //for (int i = 0; i < contours.Length; i++)
-        //{
-        //    byte hue = (byte)(i * 179 / contours.Length);
-        //    using Mat hsvPixel = new Mat(1, 1, MatType.CV_8UC3, new Scalar(hue, 255, 255));
-        //    using Mat bgrPixel = new Mat();
-
-        //    Cv2.CvtColor(hsvPixel, bgrPixel, ColorConversionCodes.HSV2BGR);
-        //    Vec3b bgr = bgrPixel.At<Vec3b>(0, 0);
-        //    Scalar color = new Scalar(bgr.Item0, bgr.Item1, bgr.Item2);
-
-        //    Cv2.DrawContours(imgContours, contours, i, color, 2);
-        //    Dbg.Show(imgContours, "imgContours");
-        //}
-        //Dbg.Show(imgContours, "imgContours");
-
-        //double imageArea = work.Width * (double)work.Height;
-        //var candidates = contours
-        //    .Select(c => (Contour: c, Area: Cv2.ContourArea(c)))
-        //    .Where(x => x.Area >= imageArea * Config.MinAreaRatio)
-        //    .OrderByDescending(x => x.Area)
-        //    .ToList();
-
-        //Dbg.Log($"con {candidates.Count} contour sau khi loc dien tich " +
-        //        $"(>= {Config.MinAreaRatio:P0} anh = {imageArea * Config.MinAreaRatio:0} px)");
-
-        //if (candidates.Count == 0) return null;
-
-        //foreach (var (_, area) in candidates.Take(5))
-        //{
-        //    Dbg.Log($"  - dien tich {area:0} px ({area / imageArea:P1} anh)");
-        //}
-
-        //if (Dbg.Enabled)
-        //{
-        //    using var overlay = work.Clone();
-        //    Cv2.DrawContours(overlay, candidates.Select(x => x.Contour).ToArray(), -1,
-        //        new Scalar(0, 255, 0), 2);
-        //    Cv2.DrawContours(overlay, new[] { candidates[0].Contour }, -1,
-        //        new Scalar(0, 0, 255), 3);
-        //    Dbg.Show(overlay, "contours");
-        //}
-        //var best = candidates[0].Contour;
-
-        //double peri = Cv2.ArcLength(best, true);
-        //var approx = Cv2.ApproxPolyDP(best, Config.ApproxEpsRatio * peri, true);
-        ////Dbg.Show(approx, "");
-        //Dbg.Log($"Xap xi da giac: {approx.Length} dinh (eps = {Config.ApproxEpsRatio * peri:0.#})");
-        //var r = Cv2.BoundingRect(best);
-        //int paddingFull = 20;
-        //var full = new Rect(
-        //    (int)(r.X / scale - paddingFull), (int)(r.Y / scale - paddingFull),
-        //    (int)(r.Width / scale + 2 * paddingFull), (int)(r.Height / scale + 2 * paddingFull))
-        //    .Intersect(new Rect(0, 0, src.Width, src.Height));
-
-        //Dbg.Log($"Cat theo hinh chu nhat bao quanh: {full}");
-        //var cropped = new Mat(src, full).Clone();
-        //Dbg.Show(cropped, "result_crop");
-        //LuuAnhG2(cropped, _outDirG2, $"{nameImgMain}");
 
         using Mat haha = new();
         return haha;
 
+    }
+
+    public static bool KiemTraCoTu_EdgeScan(Mat src, int minEdgePixels = 30)
+    {
+        Dbg.Show(src, "a");
+        if (src.Empty() || src.Channels() < 3) return false;
+
+        // 1. Tách kênh B - R để tìm 2 đốm thiếc
+        using Mat diffBR = new Mat();
+        Mat[] channels = Cv2.Split(src);
+        using (channels[0]) using (channels[1]) using (channels[2])
+        {
+            Cv2.Subtract(channels[0], channels[2], diffBR);
+        }
+        Dbg.Show(diffBR, "a");
+        using Mat silverMask = new Mat();
+        Cv2.Threshold(diffBR, silverMask, 5, 255, ThresholdTypes.Binary);
+        Dbg.Show(silverMask, "ChuyenSangDenTrangAnhVungThiec");
+
+        // Tìm vùng cháy sáng của thiếc
+        using Mat vungThiec = new();
+        Cv2.CvtColor(src, vungThiec, ColorConversionCodes.BGR2GRAY);
+        Cv2.Threshold(vungThiec, vungThiec, 150, 255, ThresholdTypes.Binary);
+        Dbg.Show(vungThiec, "ChuyenVungThieAnhGoc");
+        var a = 1;
+
+
+        //using var closeKernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new OpenCvSharp.Size(15, 15));
+        //Cv2.MorphologyEx(silverMask, silverMask, MorphTypes.Close, closeKernel);
+        //Dbg.Show(silverMask, "LamMinDomDen");
+
+        //using var kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(30, 30));
+        //Cv2.MorphologyEx(silverMask, silverMask, MorphTypes.Open, kernel);
+        //Dbg.Show(silverMask, "phepMo");
+
+        //using var cirKernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(30, 30));
+        //using Mat opened = new();
+        //Cv2.MorphologyEx(silverMask, opened, MorphTypes.Open, cirKernel);
+        //Dbg.Show(opened, "a");
+
+
+        //using Mat graySrc = new();
+        //Cv2.CvtColor(src, graySrc, ColorConversionCodes.BGR2GRAY);
+        //Dbg.Show(graySrc, "a");
+        //Cv2.Threshold(graySrc, graySrc, 150, 255, ThresholdTypes.Binary);
+        //Dbg.Show(graySrc, "a");
+
+
+        // 2. Tìm 2 đốm thiếc lớn nhất (Pad trên & Pad dưới)
+
+
+
+        return false;
+
+
+    }
+
+    public class KetQuaCheckTu
+    {
+        public bool CoTu;
+        public double EdgeScore;      // điểm matched filter
+        public double FocusVar;       // độ nét, để gate ảnh xấu
+        public int SoLineDoc;
+        public Rect VungThan;         // dải giữa 2 mối thiếc
+        public string LyDo;
+    }
+
+    public static KetQuaCheckTu KiemTraCoTu(
+        Mat src,
+        int rongThanKyVong,           // chiều rộng thân tụ (pixel), đo từ ảnh mẫu
+        double dungSaiRong = 0.20,
+        double nguongEdge = 12.0,     // TUNE bằng dữ liệu thật
+        double nguongFocus = 20.0)
+    {
+        var kq = new KetQuaCheckTu();
+        if (src.Empty()) { kq.LyDo = "Ảnh rỗng"; return kq; }
+
+        // ---------- 0. Chuẩn hoá: kênh L của Lab + CLAHE ----------
+        using Mat gray = new Mat();
+        if (src.Channels() >= 3)
+        {
+            using Mat lab = new Mat();
+            Cv2.CvtColor(src, lab, ColorConversionCodes.BGR2Lab);
+            Cv2.ExtractChannel(lab, gray, 0);
+        }
+        else src.CopyTo(gray);
+
+        using (var clahe = Cv2.CreateCLAHE(2.0, new Size(8, 8)))
+            clahe.Apply(gray, gray);
+
+        // ---------- 1. Gate độ nét ----------
+        using (Mat lap = new Mat())
+        {
+            Cv2.Laplacian(gray, lap, MatType.CV_64F);
+            Cv2.MeanStdDev(lap, out _, out Scalar sd);
+            kq.FocusVar = sd.Val0 * sd.Val0;
+        }
+        if (kq.FocusVar < nguongFocus)
+        {
+            kq.LyDo = $"Ảnh mờ (var={kq.FocusVar:F1}), không kết luận";
+            return kq;   // báo lỗi ảnh, KHÔNG kết luận NG
+        }
+
+        //int nguongSang = TinhPercentile(gray, 0.92);   // 8% pixel sáng nhất
+        int cy = (int)(gray.Rows * 0.20);
+        using Mat than = new Mat(gray, new Rect(0, cy, gray.Cols, gray.Rows - 2 * cy));
+
+        // ---------- 3. Matched filter trên gradient ngang ----------
+        kq.EdgeScore = TinhDiemCapCanh(than, rongThanKyVong, dungSaiRong);
+
+        // ---------- 4. Đếm line dọc (feature phụ) ----------
+        kq.SoLineDoc = DemLineDoc(than);
+
+        // ---------- 5. Kết luận: AND để giảm false call ----------
+        kq.CoTu = kq.EdgeScore >= nguongEdge || kq.SoLineDoc >= 2;
+        kq.LyDo = kq.CoTu ? "OK" : $"Thiếu tụ (edge={kq.EdgeScore:F1}, line={kq.SoLineDoc})";
+        return kq;
+    }
+
+    public static bool TimThanTu(Mat src, int rongKyVong, out RotatedRect than)
+    {
+        than = default;
+
+        using Mat gray = new Mat();
+        if (src.Channels() >= 3)
+        {
+            using Mat lab = new Mat();
+            Cv2.CvtColor(src, lab, ColorConversionCodes.BGR2Lab);
+            Cv2.ExtractChannel(lab, gray, 0);
+        }
+        else src.CopyTo(gray);
+
+        Cv2.Threshold(gray, gray, 235, 235, ThresholdTypes.Trunc);   // chặn chói specular
+        Dbg.Show(gray, "gray"); 
+        // Bản đồ texture: std cục bộ. Thân => thấp, thiếc & PCB => cao
+        using Mat f = new Mat(), mu = new Mat(), mu2 = new Mat(), sq = new Mat();
+        gray.ConvertTo(f, MatType.CV_32F);
+        Cv2.Blur(f, mu, new Size(9, 9));
+        Cv2.Multiply(f, f, sq);
+        Cv2.Blur(sq, mu2, new Size(9, 9));
+
+        using Mat variance = new Mat();
+        Cv2.Subtract(mu2, mu.Mul(mu), variance);
+        Cv2.Max(variance, 0, variance);
+        Cv2.Sqrt(variance, variance);
+
+        using Mat std8 = new Mat();
+        Cv2.Normalize(variance, std8, 0, 255, NormTypes.MinMax);
+        std8.ConvertTo(std8, MatType.CV_8U);
+        Dbg.Show(std8, "TextureMap");
+
+        // Vùng nhẵn = std thấp
+        using Mat maskNhan = new Mat();
+        Cv2.Threshold(std8, maskNhan, 0, 255,
+                      ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
+        Dbg.Show(maskNhan, "a");
+        using (var k = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(7, 7)))
+        {
+            Cv2.MorphologyEx(maskNhan, maskNhan, MorphTypes.Close, k);
+            Dbg.Show(maskNhan, "a");
+            Cv2.MorphologyEx(maskNhan, maskNhan, MorphTypes.Open, k);
+            Dbg.Show(maskNhan, "a");
+        }
+        Dbg.Show(maskNhan, "MaskNhan");
+
+        Cv2.FindContours(maskNhan, out Point[][] cnts, out _,
+                         RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+
+        double bestScore = 0;
+        Point2f tamRoi = new Point2f(src.Cols / 2f, src.Rows / 2f);
+
+        foreach (var c in cnts)
+        {
+            var rr = Cv2.MinAreaRect(c);
+            double wS = Math.Min(rr.Size.Width, rr.Size.Height);
+            double hL = Math.Max(rr.Size.Width, rr.Size.Height);
+
+            if (wS < rongKyVong * 0.2 || wS > rongKyVong * 1.5) continue;
+            double ratio = hL / Math.Max(wS, 1);
+            if (ratio < 1.2 || ratio > 3.0) continue;
+
+            // Độ đặc: contour phải lấp đầy rect (thân là chữ nhật thật)
+            double solidity = Cv2.ContourArea(c) / Math.Max(rr.Size.Width * rr.Size.Height, 1);
+            if (solidity < 0.75) continue;
+
+            // Ưu tiên gần tâm ROI
+            double d = Math.Sqrt(Math.Pow(rr.Center.X - tamRoi.X, 2) +
+                                 Math.Pow(rr.Center.Y - tamRoi.Y, 2));
+            double score = solidity * 100 - d;
+
+            if (score > bestScore) { bestScore = score; than = rr; }
+        }
+
+        return bestScore > 0;
+    }
+
+    public class KetQuaCanh
+    {
+        public double Score;    // đã chuẩn hoá theo sigma
+        public double A, B;     // vị trí 2 cạnh (sub-pixel)
+    }
+
+    private static KetQuaCanh TimCapCanh(Mat anh, int khoangCachKyVong,
+                                     double dungSai, bool theoTrucX)
+    {
+        var kq = new KetQuaCanh();
+
+        using Mat blur = new Mat();
+        Cv2.GaussianBlur(anh, blur, new Size(5, 5), 0);
+
+        using Mat grad = new Mat();
+        if (theoTrucX)
+            Cv2.Sobel(blur, grad, MatType.CV_32F, 1, 0, 3);   // cạnh dọc
+        else
+            Cv2.Sobel(blur, grad, MatType.CV_32F, 0, 1, 3);   // cạnh ngang
+
+        // Ép về profile 1D
+        using Mat mean = new Mat();
+        Cv2.Reduce(grad, mean,
+                   theoTrucX ? ReduceDimension.Row : ReduceDimension.Column,
+                   ReduceTypes.Avg, MatType.CV_32F);
+
+        mean.GetArray(out float[] prof);   // Column => vector cột, vẫn đọc tuyến tính OK
+
+        float mu = prof.Average();
+        for (int i = 0; i < prof.Length; i++) prof[i] -= mu;
+
+        double sigma = Math.Sqrt(prof.Select(v => (double)v * v).Average());
+        if (sigma < 1e-6) return kq;
+
+        int wMin = (int)(khoangCachKyVong * (1 - dungSai));
+        int wMax = (int)(khoangCachKyVong * (1 + dungSai));
+        int iBest = -1, jBest = -1;
+        double best = 0;
+
+        for (int w = wMin; w <= wMax && w < prof.Length; w++)
+            for (int i = 0; i + w < prof.Length; i++)
+            {
+                if (Math.Sign(prof[i]) == Math.Sign(prof[i + w])) continue;
+                double s = Math.Min(Math.Abs(prof[i]), Math.Abs(prof[i + w]));
+                if (s > best) { best = s; iBest = i; jBest = i + w; }
+            }
+
+        if (iBest < 0) return kq;
+
+        kq.Score = best / sigma;
+        kq.A = NoiSuyDinh(prof, iBest);
+        kq.B = NoiSuyDinh(prof, jBest);
+        return kq;
+    }
+
+    // Nội suy parabol qua 3 điểm => vị trí đỉnh sub-pixel
+    private static double NoiSuyDinh(float[] p, int i)
+    {
+        if (i <= 0 || i >= p.Length - 1) return i;
+        double y0 = Math.Abs(p[i - 1]), y1 = Math.Abs(p[i]), y2 = Math.Abs(p[i + 1]);
+        double mauSo = y0 - 2 * y1 + y2;
+        if (Math.Abs(mauSo) < 1e-9) return i;
+        double delta = 0.5 * (y0 - y2) / mauSo;
+        if (Math.Abs(delta) > 1) return i;      // nội suy hỏng, trả về nguyên
+        return i + delta;
+    }
+
+    private static int TinhPercentile(Mat gray, double p)
+    {
+        using Mat hist = new Mat();
+        Cv2.CalcHist(new[] { gray }, new[] { 0 }, null, hist,
+                     1, new[] { 256 }, new[] { new Rangef(0, 256) });
+        double tong = gray.Rows * gray.Cols, cong = 0;
+        for (int i = 0; i < 256; i++)
+        {
+            cong += hist.At<float>(i);
+            if (cong / tong >= p) return i;
+        }
+        return 255;
+    }
+
+    private static double TinhDiemCapCanh(Mat than, int rongKyVong, double dungSai)
+    {
+        using Mat blur = new Mat();
+        Cv2.GaussianBlur(than, blur, new Size(5, 5), 0);
+        using Mat gx = new Mat();
+        Cv2.Sobel(blur, gx, MatType.CV_32F, 1, 0, 3);
+        Dbg.Show(gx, "a");
+
+        using Mat mean = new Mat();
+        Cv2.Reduce(gx, mean, ReduceDimension.Row, ReduceTypes.Avg, MatType.CV_32F);
+        Dbg.Show(mean, "a");
+        mean.GetArray(out float[] prof);
+
+        float mu = prof.Average();
+        for (int i = 0; i < prof.Length; i++) prof[i] -= mu;
+
+        double sigma = Math.Sqrt(prof.Select(v => (double)v * v).Average());
+        if (sigma < 1e-6) return 0;
+
+        int wMin = (int)(rongKyVong * (1 - dungSai));
+        int wMax = (int)(rongKyVong * (1 + dungSai));
+        double best = 0;
+
+        for (int w = wMin; w <= wMax && w < prof.Length; w++)
+            for (int i = 0; i + w < prof.Length; i++)
+            {
+                if (Math.Sign(prof[i]) == Math.Sign(prof[i + w])) continue;
+                double s = Math.Min(Math.Abs(prof[i]), Math.Abs(prof[i + w]));
+                if (s > best) best = s;
+            }
+
+        return best / sigma;   // số không thứ nguyên, ~2-5 là có cạnh rõ
+    }
+
+    private static int DemLineDoc(Mat than)
+    {
+        using Mat edge = new Mat();
+        Cv2.Canny(than, edge, 50, 150);
+        Dbg.Show(edge, "than");
+        var lines = Cv2.HoughLinesP(edge, 1, Math.PI / 180, 30,
+                                    minLineLength: than.Rows * 0.5, maxLineGap: 5);
+        if (lines == null) return 0;
+        return lines.Count(l =>
+        {
+            double ang = Math.Abs(Math.Atan2(l.P2.Y - l.P1.Y, l.P2.X - l.P1.X) * 180 / Math.PI);
+            return Math.Abs(ang - 90) < 12;
+        });
+    }
+
+    /// <summary>
+    /// Kiểm tra tụ có hiện diện hay không (Presence/Absence Check)
+    /// </summary>
+    /// <param name="src">Ảnh đầu vào (BGR hoặc Grayscale)</param>
+    /// <param name="centerRoi">Vùng ROI nhỏ đặt đúng vào tâm thân tụ</param>
+    /// <param name="minMeanGray">Ngưỡng xám tối thiểu của thân gốm (thường từ 80 - 110)</param>
+    /// <returns>True nếu CÓ tụ (OK), False nếu MẤT tụ (NG)</returns>
+    public static bool CheckComponentPresence(Mat src, Rect centerRoi, double minMeanGray = 90.0)
+    {
+        // 1. Khóa biên ROI an toàn chống tràn ma trận
+        Rect imageBounds = new Rect(0, 0, src.Width, src.Height);
+        Rect safeRoi = centerRoi & imageBounds;
+
+        if (safeRoi.Width <= 0 || safeRoi.Height <= 0)
+            return false; // ROI không hợp lệ -> Coi như NG
+
+        // 2. Cắt Sub-Mat ROI tại tâm (Zero-copy)
+        using Mat roiMat = new Mat(src, safeRoi);
+
+        // 3. Chuyển sang Grayscale nếu là ảnh màu
+        using Mat grayRoi = new Mat();
+        if (roiMat.Channels() == 3)
+        {
+            Cv2.CvtColor(roiMat, grayRoi, ColorConversionCodes.BGR2GRAY);
+        }
+        else
+        {
+            roiMat.CopyTo(grayRoi);
+        }
+
+        // 4. Tính toán Cường độ sáng trung bình (Mean) và Độ lệch chuẩn (StdDev)
+        Cv2.MeanStdDev(grayRoi, out Scalar mean, out Scalar stddev);
+        double meanVal = mean.Val0;
+
+        // 5. Quyết định: Nếu giá trị xám trung bình < ngưỡng nền đen -> Mất tụ
+        if (meanVal < minMeanGray)
+        {
+            return false; // NG: MISSING COMPONENT
+        }
+
+        return true; // OK: Có tụ, tiếp tục sang Tầng 2
     }
 
     /// <summary>
