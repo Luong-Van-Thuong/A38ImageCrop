@@ -31,6 +31,37 @@ public static class Config
 {
     public static int WorkWidth = 1000;
 
+    /// <summary>
+    /// Bề ngang ảnh dùng cho BƯỚC THÔ (dò khối MLCC nằm chỗ nào).
+    /// Mở ellipse 150px trên ảnh 2448px là chỗ chậm nhất cả pipeline; thu ảnh về ~800px
+    /// thì cả ảnh lẫn kernel cùng nhỏ đi ~3 lần, nhanh hơn hàng chục lần.
+    /// Bước này chỉ cần biết vùng ở đâu, sai vài chục px không sao vì đã có
+    /// <see cref="PaddingThoPx"/> nới ra ngoài. Đặt = 0 để tắt, chạy nguyên cỡ ảnh gốc.
+    /// </summary>
+    public static int WorkWidthTho = 800;
+
+    /// <summary>
+    /// Nới khung cắt thô ra mỗi phía bao nhiêu px (đo ở ảnh GỐC).
+    /// Thà cắt rộng ra ngoài chứ tuyệt đối không được liếm vào vùng cần soi.
+    /// CHỈ dùng khi <see cref="KhungChuanPx"/> = 0; bật chuẩn hoá thì cửa sổ cố định
+    /// đã rộng sẵn, nới thêm chỉ làm hỏng ngưỡng "khung có vừa cửa sổ không".
+    /// </summary>
+    public static int PaddingThoPx = 40;
+
+    /// <summary>
+    /// Cạnh ảnh vuông xuất ra cho YOLO, đo bằng px ảnh GỐC. 0 = tắt chuẩn hoá.
+    ///
+    /// Đo trên 193 ảnh cắt được: khung dò được rộng p50=346 p90=437 p99=535, cao p50=355
+    /// p90=453 p99=716. Chọn 512 thì ~9/10 ảnh vừa gọn, cắt thẳng không phải nội suy.
+    /// </summary>
+    public static int KhungChuanPx = 512;
+
+    /// <summary>Màu đệm khi cửa sổ chuẩn tràn ra ngoài ảnh — 114 xám là quy ước letterbox của YOLO.</summary>
+    public static Scalar MauDemLetterbox = new Scalar(114, 114, 114);
+
+    /// <summary>Đường kính ellipse mở để loại vùng thừa dính vào khối MLCC (px đo ở ảnh GỐC).</summary>
+    public static int KernelLoaiVungThuaPx = 150;
+
     public static int BlurKernel = 5;
 
     public static int CannyLow = 50;
@@ -49,7 +80,8 @@ public static class Config
     
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh1";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh2";
-    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\Ng";
+    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\MatMLCCX";
+    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\ng1";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\Ng_";
 
     public static string[] ImageExtensions = { ".bmp", ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
@@ -88,9 +120,9 @@ public static class ProtrusionCfg
 
 public static class Program
 {
-    private static readonly string _outDirG2 = "imgCheck";
+    private static readonly string _outDirG2 = "MatMLCCX";
 
-    private static readonly string _outDirNotFound = "sut_me_botton_not_found";
+    private static readonly string _outDirNotFound = "khongthay_MatMLCCX";
 
     [ThreadStatic] private static string? _baseName;
     [ThreadStatic] private static int _demAnhG2;
@@ -355,13 +387,17 @@ public static class Program
         Dbg.Reset();
 
         using var result = CropLargestRegion(src, nameImgMain);
-        Dbg.Show(result, "Anh sau khi cat");
 
+        // Kiem tra null TRUOC khi Show — khong thi anh nao khong do duoc vung
+        // se chet o Dbg.Show voi NullReference, che mat ly do that su.
         if (result is null || result.Empty())
         {
             Dbg.Info("  Khong do duoc vung nao giam Config.CannyLow or Config.MinAreaRatio.");
-            return KetQuaXuLy.Loi;
+            LuuAnhG2(src, _outDirNotFound, $"{nameImgMain}");
+            return KetQuaXuLy.KhongThayPhanNho;
         }
+
+        Dbg.Show(result, "Anh sau khi cat");
 
         //Directory.CreateDirectory(_outDirG2);
         //var outPath = Path.Combine(_outDirG2, _baseName + "_crop.png");
@@ -503,7 +539,24 @@ public static class Program
     }
     private static Mat Dia(int r) =>
     Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(2 * r + 1, 2 * r + 1));
-    private static Mat VungDong(Mat src)
+
+    /// <summary>
+    /// Quy một kích thước DÀI (px đo ở ảnh gốc) về ảnh đã thu nhỏ theo <paramref name="scale"/>.
+    /// Không bao giờ trả 0 — kernel 0px là morphology thành no-op, sai thầm lặng.
+    /// </summary>
+    private static int PxTheoScale(double pxGoc, double scale) =>
+        Math.Max(1, (int)Math.Round(pxGoc * scale));
+
+    /// <summary>
+    /// Quy một ngưỡng DIỆN TÍCH (px² ở ảnh gốc) về ảnh thu nhỏ: dài co scale thì diện tích co scale².
+    /// Quên bình phương ở đây là lọc mất sạch contour thật khi thu nhỏ 3 lần.
+    /// </summary>
+    private static double DienTichTheoScale(double dienTichGoc, double scale) =>
+        dienTichGoc * scale * scale;
+
+    /// <param name="scale">Tỉ lệ ảnh truyền vào so với ảnh gốc (1.0 = nguyên cỡ).
+    /// Mọi kích thước hình thái học lấy từ ModelCfg đều đo ở ảnh gốc nên phải quy theo tỉ lệ này.</param>
+    private static Mat VungDong(Mat src, double scale = 1.0)
     {
         var dong = Mat.Zeros(src.Size(), MatType.CV_8UC1).ToMat();
         if (!ModelCfg.DongLaDontCare || src.Channels() < 3) return dong;
@@ -514,20 +567,55 @@ public static class Program
         foreach (var c in kenh) c.Dispose();
 
         Cv2.Threshold(hieu, dong, ModelCfg.NguongDongRB, 255, ThresholdTypes.Binary);
-        //Dbg.Show(hieu, "hieu");
+        Dbg.Show(hieu, "hieu");
         if (ModelCfg.MoVungDong > 0)
         {
-            Cv2.MorphologyEx(dong, dong, MorphTypes.Open, Dia(ModelCfg.MoVungDong));
-            //Dbg.Show(dong, "dong");
-        }      
+            using var kMo = Dia(PxTheoScale(ModelCfg.MoVungDong, scale));
+            Cv2.MorphologyEx(dong, dong, MorphTypes.Open, kMo);
+            Dbg.Show(dong, "dong");
+        }
         if (ModelCfg.NoiRongDontCare > 0)
         {
-            Cv2.Dilate(dong, dong, Dia(ModelCfg.NoiRongDontCare));
-            //Dbg.Show(dong, "dong");
-        }    
-            
+            using var kNoi = Dia(PxTheoScale(ModelCfg.NoiRongDontCare, scale));
+            Cv2.Dilate(dong, dong, kNoi);
+            Dbg.Show(dong, "dong");
+        }
+
+        // Phep no
+        var result = Mat.Zeros(dong.Size(), MatType.CV_8UC1).ToMat();
+        using Mat expanded = new();
+        using var kernel = Cv2.GetStructuringElement(MorphShapes.Ellipse, new OpenCvSharp.Size(50, 50));
+        Cv2.Dilate(dong, expanded, kernel);
+        Dbg.Show(expanded, "dong");
+
+
+        using var labels = new Mat();
+        using var stats = new Mat();
+        using var centroids = new Mat();
+        int nLabels = Cv2.ConnectedComponentsWithStats(expanded, labels, stats, centroids, PixelConnectivity.Connectivity8, MatType.CV_32S);
+        int maxLabel = 1;
+        int maxArea = 0;
+        int areaColIndex = (int)ConnectedComponentsTypes.Area;
+
+        for (int i = 1; i < nLabels; i++)
+        {
+            int area = stats.At<int>(i, areaColIndex);
+            if (area > maxArea)
+            {
+                maxArea = area;
+                maxLabel = i;
+            }
+        }
+
+        Cv2.Compare(labels, new Scalar(maxLabel), labels, CmpTypes.EQ);
+        Dbg.Show(labels, "a");
+
+        Cv2.BitwiseAnd(labels, dong, dong);
+        Dbg.Show(dong, "a");
         return dong;
     }
+
+
     private static Mat VungDong_2(Mat src)
     {
         int nguongDong = 5;
@@ -555,7 +643,8 @@ public static class Program
         return dong;
     }
 
-    private static Mat VungTrangBac_Gray(Mat src)
+    /// <param name="scale">Tỉ lệ ảnh truyền vào so với ảnh gốc (1.0 = nguyên cỡ).</param>
+    private static Mat VungTrangBac_Gray(Mat src, double scale = 1.0)
     {
         var mask = Mat.Zeros(src.Size(), MatType.CV_8UC1).ToMat();
         if (src.Empty()) return mask;
@@ -576,8 +665,8 @@ public static class Program
                 Cv2.Subtract(kenh[0], kenh[2], hieuBR);
 
                 // Phân ngưỡng trên ma trận hiệu
-                Cv2.Threshold(hieuBR, binaryTho, 15, 255, ThresholdTypes.Binary);
-                //Dbg.Show(hieuBR, "a");
+                Cv2.Threshold(hieuBR, binaryTho, 20, 255, ThresholdTypes.Binary);
+                Dbg.Show(hieuBR, "a");
             } // Hết block using này, 3 kênh kenh[0..2] và hieuBR mới được Dispose an toàn!
         }
         else
@@ -586,19 +675,19 @@ public static class Program
         }
 
         // 2. Morphology CLOSE: Nối liền các vết nứt xước
-        int kSize = ModelCfg.MoVungDong > 0 ? ModelCfg.MoVungDong : 7;
+        int kSize = PxTheoScale(ModelCfg.MoVungDong > 0 ? ModelCfg.MoVungDong : 7, scale);
         using var kernelClose = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(kSize, kSize));
         using var closed = new Mat();
         Cv2.MorphologyEx(binaryTho, closed, MorphTypes.Close, kernelClose);
         //Dbg.Show(binaryTho, "a");
-        //Dbg.Show(closed, "a");
+        Dbg.Show(closed, "a");
         //Dbg.Show(src, "a");
 
 
         using var matDen = new Mat();
         Cv2.CvtColor(src, matDen, ColorConversionCodes.BGR2GRAY);
-        Cv2.Threshold(matDen, matDen, 70, 255, ThresholdTypes.Binary);
-        //Dbg.Show(matDen, "a");
+        Cv2.Threshold(matDen, matDen, 80, 255, ThresholdTypes.Binary);
+        Dbg.Show(matDen, "a");
         // 3. FILL HOLES: Lấy Contour ngoài cùng và vẽ đặc ruột
         Cv2.FindContours(
             closed,
@@ -611,29 +700,30 @@ public static class Program
         for (int i = 0; i < contours.Length; i++)
         {
             double area = Cv2.ContourArea(contours[i]);
-            if (area > 200) // Lọc nhiễu vụn
+            if (area > DienTichTheoScale(200, scale)) // Lọc nhiễu vụn
             {
                 Cv2.DrawContours(mask, contours, i, Scalar.White, -1); // -1: Fill đặc
-                //Dbg.Show(mask, "a");
+                Dbg.Show(mask, "a");
             }
         }
 
         // 4. Dilate nếu cần nới rộng Don't Care
         if (ModelCfg.NoiRongDontCare > 0)
         {
-            Cv2.Dilate(mask, mask, Dia(ModelCfg.NoiRongDontCare));
+            using var kNoi = Dia(PxTheoScale(ModelCfg.NoiRongDontCare, scale));
+            Cv2.Dilate(mask, mask, kNoi);
         }
-        //Dbg.Show(mask, "a");
+        Dbg.Show(mask, "a");
         //LuuAnhG2(mask, _outDirG2, $"anh1");
 
-       // Dbg.Show(matDen, "a");
+        Dbg.Show(matDen, "a");
         //LuuAnhG2(matDen, _outDirG2, $"anh2");
         using Mat result = new Mat();
         Cv2.BitwiseAnd(matDen, mask, mask);
-        //Dbg.Show(result, "a");
+        Dbg.Show(mask, "a");
 
         Cv2.BitwiseNot(mask, mask);
-        //Dbg.Show(result, "a");
+        Dbg.Show(mask, "a");
         return mask;
     }
 
@@ -720,6 +810,10 @@ public static class Program
     }
     public static Mat LayVungTrangLonNhat(Mat binaryInput)
     {
+        Dbg.Show(binaryInput, "a");
+        using var kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new OpenCvSharp.Size(5, 5));
+        Cv2.Dilate(binaryInput, binaryInput, kernel);
+        Dbg.Show(binaryInput, "a");
         // 1. Khởi tạo ma trận kết quả đen hoàn toàn (cùng kích thước)
         Mat resultMask = Mat.Zeros(binaryInput.Size(), MatType.CV_8UC1).ToMat();
 
@@ -757,8 +851,10 @@ public static class Program
 
         return resultMask;
     }
-    public static Mat LayVungDenBenTrong(Mat binarySrc)
+    /// <param name="scale">Tỉ lệ ảnh truyền vào so với ảnh gốc (1.0 = nguyên cỡ).</param>
+    public static Mat LayVungDenBenTrong(Mat binarySrc, double scale = 1.0)
     {
+        Dbg.Show(binarySrc, "a");
         // 1. d MTạo ma trận lấp đầy toàn bộ khối trắng bên ngoài (Filleask)
         using Mat filledWhite = Mat.Zeros(binarySrc.Size(), MatType.CV_8UC1).ToMat();
 
@@ -775,7 +871,7 @@ public static class Program
         for (int i = 0; i < contours.Length; i++)
         {
             double area = Cv2.ContourArea(contours[i]);
-            if (area > 1000) // Lọc bỏ contour vụn ở viền biên nếu có
+            if (area > DienTichTheoScale(1000, scale)) // Lọc bỏ contour vụn ở viền biên nếu có
             {
                 Cv2.DrawContours(filledWhite, contours, i, Scalar.White, -1); // -1: Fill đặc ruột
             }
@@ -784,8 +880,10 @@ public static class Program
         // 2. Phép trừ ma trận: Lấy Khối Trắng Đặc trừ đi Ảnh Gốc
         // Kết quả: Chỉ những chỗ là Đen (0) nằm bên trong ruột mới trở thành Trắng (255)
         Mat internalBlackMask = new Mat();
+        Dbg.Show(binarySrc, "a");
+        Dbg.Show(filledWhite, "a");
         Cv2.Subtract(filledWhite, binarySrc, internalBlackMask);
-
+        Dbg.Show(internalBlackMask, "a");
         // 3. (Tùy chọn) Morphology để lọc nhiễu các đường gân xước quá nhỏ
         // using var kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(3, 3));
         // Cv2.MorphologyEx(internalBlackMask, internalBlackMask, MorphTypes.Open, kernel);
@@ -794,38 +892,106 @@ public static class Program
     }
 
 
+    /// <summary>
+    /// Cắt ra một ảnh VUÔNG cỡ chuẩn quanh <paramref name="khung"/> để làm đầu vào YOLO.
+    ///
+    /// Camera cố định, con tụ luôn cùng một cỡ pixel, nên chuẩn hoá đúng ở đây là lấy một
+    /// CỬA SỔ CỐ ĐỊNH trên ảnh gốc, không phải resize khung dò được: resize thì khung 245px
+    /// và khung 1049px cùng ra 512, model mất sạch manh mối kích thước thật — mà bài này
+    /// phân biệt nghiêng/không nghiêng chính là nhìn kích thước với tỉ lệ.
+    /// Giữ nguyên thang đo px/vật thì mọi ảnh huấn luyện cùng một hệ quy chiếu,
+    /// lại không tốn lần nội suy nào.
+    ///
+    /// Ba tình huống, theo thứ tự hay gặp:
+    ///  1. Cửa sổ nằm gọn trong ảnh  -> cắt thẳng, KHÔNG resize (đường thường, ~9/10 ảnh).
+    ///  2. Cửa sổ thò ra mép ảnh     -> đẩy vào trong, vẫn đủ cạnh, vẫn đúng thang đo.
+    ///     (đẩy chứ không xén: xén thì ảnh ra thiếu cạnh, phải đệm viền giả vô ích)
+    ///  3. Khung to hơn cả cửa sổ    -> nới cửa sổ thành vuông trùm hết khung rồi thu ĐỀU
+    ///     về cỡ chuẩn. Thang đo ảnh đó lệch, nhưng thà lệch còn hơn cắt cụt mất một đầu tụ.
+    /// </summary>
+    /// <param name="khung">Khung dò được, toạ độ ảnh gốc.</param>
+    /// <param name="canh">Cạnh ảnh vuông muốn xuất ra (px ảnh gốc).</param>
+    private static Mat ChuanHoaKhungYolo(Mat src, Rect khung, int canh)
+    {
+        // Bình thường cửa sổ đúng bằng cạnh chuẩn; chỉ nở ra khi khung dò được quá to.
+        int canhCuaSo = Math.Max(canh, Math.Max(khung.Width, khung.Height));
+
+        int tamX = khung.X + khung.Width / 2;
+        int tamY = khung.Y + khung.Height / 2;
+        Rect cuaSo = new Rect(tamX - canhCuaSo / 2, tamY - canhCuaSo / 2, canhCuaSo, canhCuaSo);
+
+        // Đẩy cửa sổ vào trong ảnh thay vì xén nó.
+        cuaSo.X = Math.Clamp(cuaSo.X, 0, Math.Max(0, src.Cols - canhCuaSo));
+        cuaSo.Y = Math.Clamp(cuaSo.Y, 0, Math.Max(0, src.Rows - canhCuaSo));
+
+        Rect phanThat = cuaSo & new Rect(0, 0, src.Cols, src.Rows);
+
+        Mat vuong;
+        if (phanThat.Width == canhCuaSo && phanThat.Height == canhCuaSo)
+        {
+            vuong = new Mat(src, phanThat).Clone();
+        }
+        else
+        {
+            // Chỉ tới đây khi cả ảnh gốc còn nhỏ hơn cửa sổ (đổi camera thì gặp).
+            // Đệm cân hai bên để con tụ vẫn nằm giữa, lệch tâm là hỏng dữ liệu học.
+            int thieuNgang = canhCuaSo - phanThat.Width;
+            int thieuDoc = canhCuaSo - phanThat.Height;
+            vuong = new Mat();
+            using Mat cat = new Mat(src, phanThat);
+            Cv2.CopyMakeBorder(cat, vuong,
+                thieuDoc / 2, thieuDoc - thieuDoc / 2,
+                thieuNgang / 2, thieuNgang - thieuNgang / 2,
+                BorderTypes.Constant, Config.MauDemLetterbox);
+        }
+
+        if (canhCuaSo == canh) return vuong;
+
+        // Vuông thu về vuông nên không méo tỉ lệ, chỉ đổi thang đo.
+        using (vuong)
+        {
+            Dbg.Log($"khung {khung.Width}x{khung.Height} to hon cua so {canh}, " +
+                    $"thu deu tu {canhCuaSo} ve {canh}");
+            Mat ketQua = new Mat();
+            Cv2.Resize(vuong, ketQua, new Size(canh, canh), 0, 0, InterpolationFlags.Area);
+            return ketQua;
+        }
+    }
+
     private static Mat? CropLargestRegion(Mat src, string nameImgMain)
     {
-        //double scale = Math.Min(1.0, (double)Config.WorkWidth / src.Width);
+        // ---- Bước THÔ chạy trên ảnh thu nhỏ --------------------------------------
+        // Cả đoạn dưới chỉ để trả lời "khối MLCC nằm chỗ nào", không đo đạc gì, nên
+        // chạy ở độ phân giải thấp là đủ. Mọi kernel/ngưỡng diện tích đều đo theo px
+        // ảnh GỐC rồi quy về scale, nên đổi WorkWidthTho không làm lệch hình thái học.
+        double scale = Config.WorkWidthTho > 0
+            ? Math.Min(1.0, (double)Config.WorkWidthTho / src.Width)
+            : 1.0;
+
         using var work = new Mat();
-        //if (scale < 1.0)
-        //    Cv2.Resize(src, work, new Size(), scale, scale, InterpolationFlags.Area);
-        //else
-        //    src.CopyTo(work);
+        if (scale < 1.0)
+            Cv2.Resize(src, work, new Size(), scale, scale, InterpolationFlags.Area);
+        else
+            src.CopyTo(work);
+        Dbg.Show(work, "work_tho");
 
-
-
-
-
-        using var dong = VungDong(src);
+        using var dong = VungDong(work, scale);
         Dbg.Show(dong, "vungdong");
 
-        using Mat nonZeroPts = new();
-        Cv2.FindNonZero(dong, nonZeroPts);
-
-        Mat workSub = new();
-        if(!nonZeroPts.Empty())
+        // Khung bao vùng đồng, tính trong hệ toạ độ ảnh work.
+        // Không tìm được thì lấy cả ảnh, đừng để workSub rỗng rồi chết ở bước sau.
+        Rect khungDong = new Rect(0, 0, work.Cols, work.Rows);
+        using (Mat nonZeroPts = new())
         {
-            Rect rectRoi = Cv2.BoundingRect(nonZeroPts);
-            Rect imgBounds = new Rect(0, 0, src.Cols, src.Width);
-            Rect safeRoi = rectRoi & imgBounds;
-            if(safeRoi.Width > 0 && safeRoi.Height >0)
+            Cv2.FindNonZero(dong, nonZeroPts);
+            if (!nonZeroPts.Empty())
             {
-                workSub = new(src, safeRoi);
-
-            }    
-            
+                Rect r = Cv2.BoundingRect(nonZeroPts) & new Rect(0, 0, work.Cols, work.Rows);
+                if (r.Width > 0 && r.Height > 0) khungDong = r;
+            }
         }
+
+        using Mat workSub = new(work, khungDong);
         Dbg.Show(workSub, "Img Cropp");
 
         // Vùng đồng 2
@@ -835,38 +1001,76 @@ public static class Program
 
 
         // Vùng sáng bạc
-        using Mat vungSangBac = VungTrangBac_Gray(workSub);
+        using Mat vungSangBac = VungTrangBac_Gray(workSub, scale);
         Dbg.Show(vungSangBac, "VungSangBac");
         //LuuAnhG2(vungSangBac, _outDirG2, $"VungSangBac");
 
 
         // Lấy vùng có tụ
-        using Mat vungMlcc = LayVungDenBenTrong(vungSangBac);
+        using Mat vungMlcc = LayVungDenBenTrong(vungSangBac, scale);
         Dbg.Show(vungMlcc, "a");
         // Lấy vùng trắng lớn nhất
         using Mat vungTrangLonNhat = LayVungTrangLonNhat(vungMlcc);
         Dbg.Show(vungTrangLonNhat, "a");
-        //Loại bỏ vùng thừa
-        using var kernelLoaiVung1 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(150, 150));
+        // Loại bỏ vùng thừa — đây là chỗ tốn thời gian nhất của cả hàm:
+        // ellipse 150px trên ảnh gốc, sau khi thu nhỏ chỉ còn ~150*scale px.
+        int dKernel = PxTheoScale(Config.KernelLoaiVungThuaPx, scale);
+        using var kernelLoaiVung1 = Cv2.GetStructuringElement(MorphShapes.Ellipse, new Size(dKernel, dKernel));
         using Mat vungMlcc2 = new();
         Cv2.MorphologyEx(vungTrangLonNhat, vungMlcc2, MorphTypes.Open, kernelLoaiVung1);
         Dbg.Show(vungMlcc2, "a");
-                
+
         using Mat nonZeroPtsVungMlcc = new();
-        Mat vungMLCCMain = new();
         Cv2.FindNonZero(vungMlcc2, nonZeroPtsVungMlcc);
-        if(!nonZeroPtsVungMlcc.Empty())
+        if (nonZeroPtsVungMlcc.Empty())
         {
-            Rect rawRoi = Cv2.BoundingRect(nonZeroPtsVungMlcc);
-            Rect imgBounds = new Rect(0, 0, workSub.Width, workSub.Height);
-            Rect safeRoi = rawRoi & imgBounds;
+            Dbg.Info("  Buoc tho: khong tim thay vung MLCC nao.");
+            return null;
+        }
 
-            if(safeRoi.Width > 0 && safeRoi.Height>0)
-            {
-                vungMLCCMain = new Mat(workSub, safeRoi);
+        // ---- Quy khung về TOẠ ĐỘ ẢNH GỐC rồi mới cắt -----------------------------
+        // workSub -> work: cộng offset của lần cắt theo vùng đồng.
+        Rect roiWork = Cv2.BoundingRect(nonZeroPtsVungMlcc);
+        roiWork = new Rect(roiWork.X + khungDong.X, roiWork.Y + khungDong.Y,
+                           roiWork.Width, roiWork.Height);
 
-            }    
+        // work -> gốc: chia scale. Cộng thêm 1/scale px để bù đúng phần bị làm tròn
+        // khi thu nhỏ (1 px ảnh work = 1/scale px ảnh gốc), rồi mới nới padding.
+        // Cắt rộng ra ngoài thì không sao, liếm vào vùng cần soi mới là hỏng.
+        Rect khungAnh = new Rect(0, 0, src.Cols, src.Rows);
+        int buLamTron = (int)Math.Ceiling(1.0 / scale);
+        Rect roiGoc = new Rect(
+            (int)Math.Floor(roiWork.X / scale) - buLamTron,
+            (int)Math.Floor(roiWork.Y / scale) - buLamTron,
+            (int)Math.Ceiling(roiWork.Width / scale) + 2 * buLamTron,
+            (int)Math.Ceiling(roiWork.Height / scale) + 2 * buLamTron);
+        roiGoc &= khungAnh;
 
+        if (roiGoc.Width <= 0 || roiGoc.Height <= 0)
+        {
+            Dbg.Info($"  Buoc tho: khung quy ve anh goc bi rong ({roiWork} @ scale {scale:0.###}).");
+            return null;
+        }
+
+        Dbg.Log($"cat tho: work {roiWork} @ scale {scale:0.###} -> goc {roiGoc}");
+
+        // Clone: new Mat(src, roi) chỉ là header trỏ vào src, mà src bị Dispose ngay
+        // khi ra khỏi XuLyMotAnh — trả về view là trả về con trỏ treo.
+        Mat vungMLCCMain;
+        if (Config.KhungChuanPx > 0)
+        {
+            // Chuẩn hoá về cỡ cố định cho YOLO. Padding thô không dùng ở nhánh này:
+            // cửa sổ 512 đã rộng gấp rưỡi khung dò được, nới thêm chỉ tổ đẩy những
+            // khung sát 512 vượt ngưỡng rồi phải thu nhỏ vô ích.
+            vungMLCCMain = ChuanHoaKhungYolo(src, roiGoc, Config.KhungChuanPx);
+        }
+        else
+        {
+            var roiNoi = new Rect(
+                roiGoc.X - Config.PaddingThoPx, roiGoc.Y - Config.PaddingThoPx,
+                roiGoc.Width + 2 * Config.PaddingThoPx,
+                roiGoc.Height + 2 * Config.PaddingThoPx) & khungAnh;
+            vungMLCCMain = new Mat(src, roiNoi).Clone();
         }
         Dbg.Show(vungMLCCMain, "VungMLCCMain");
         LuuAnhG2(vungMLCCMain, _outDirG2, $"{nameImgMain}");
@@ -903,8 +1107,7 @@ public static class Program
         //Dbg.Show(cannyTu, "cannyTu");
 
 
-        using Mat haha = new();
-        return haha;
+        return vungMLCCMain;
 
     }
 
