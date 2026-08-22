@@ -6,6 +6,7 @@ using System.Diagnostics.Metrics;
 using System.Net.WebSockets;
 using System.Numerics;
 using System.Runtime.Intrinsics.X86;
+using static ProtrusionDetector;
 using static System.Net.Mime.MediaTypeNames;
 
 namespace A38.ImageCrop;
@@ -81,7 +82,7 @@ public static class Config
     public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-36-30.bmp";
 
     
-    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\CamChupTrenXuong\\XoayTraiPhai\\XoayPhaiX\\Doc";
+    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\ChupNghieng\\nghiengLenX\\NghiengTraiPhai";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh3";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh1";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\TRAIN_AI\\TEST";
@@ -124,7 +125,7 @@ public static class ProtrusionCfg
 
 public static class Program
 {
-    private static readonly string _outDirG2 = "OK_";
+    private static readonly string _outDirG2 = "crop_";
     private static readonly string _outDirNgang = "Ngang";
     private static readonly string _outDirDoc = "Doc";
 
@@ -212,7 +213,13 @@ public static class Program
                 new ParallelOptions { MaxDegreeOfParallelism = soLuong },
                 cv =>
                 {
-                    switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                    //switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                    //{
+                    //    case KetQuaXuLy.ThanhCong: Interlocked.Increment(ref soThanhCong); break;
+                    //    case KetQuaXuLy.KhongThayPhanNho: Interlocked.Increment(ref soKhongThayPhanNho); break;
+                    //    default: Interlocked.Increment(ref soLoi); break;
+                    //}
+                    switch (ChayMotViec_AnhNghieng(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
                     {
                         case KetQuaXuLy.ThanhCong: Interlocked.Increment(ref soThanhCong); break;
                         case KetQuaXuLy.KhongThayPhanNho: Interlocked.Increment(ref soKhongThayPhanNho); break;
@@ -226,7 +233,13 @@ public static class Program
         {
             foreach (var cv in congViec)
             {
-                switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                //switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                //{
+                //    case KetQuaXuLy.ThanhCong: soThanhCong++; break;
+                //    case KetQuaXuLy.KhongThayPhanNho: soKhongThayPhanNho++; break;
+                //    default: soLoi++; break;
+                //}
+                switch (ChayMotViec_AnhNghieng(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
                 {
                     case KetQuaXuLy.ThanhCong: soThanhCong++; break;
                     case KetQuaXuLy.KhongThayPhanNho: soKhongThayPhanNho++; break;
@@ -283,6 +296,105 @@ public static class Program
         try
         {
             ketQua = XuLyMotAnh(inputPath);
+        }
+        catch (Exception ex)
+        {
+            ketQua = KetQuaXuLy.Loi;
+            Dbg.Info($"  Loi khi xu ly{Path.GetFileName(inputPath)}: {ex.Message}");
+        }
+
+        var log = Dbg.KetThucLuong();
+        if (log.Length > 0)
+        {
+            lock (_khoaConsole)
+            {
+                Console.Write(log);
+                Console.WriteLine();
+            }
+        }
+
+        return ketQua;
+    }
+    private static KetQuaXuLy ChayMotViec_AnhNghieng(string inputPath, int thuTu, int tong, bool chayCaMe)
+    {
+        var tenAnh = Path.GetFileNameWithoutExtension(inputPath);
+
+        if (chayCaMe || Config.SaveDebugStepsInBatch) Dbg.BatDauLuong(Path.Combine("debug_out", tenAnh));
+
+        Dbg.Info($"===== [{thuTu}/{tong}] {Path.GetFileName(inputPath)} =====");
+
+        KetQuaXuLy ketQua;
+        try
+        {
+            using var src = Cv2.ImRead(inputPath, ImreadModes.Color);
+            string nameImg = Path.GetFileName(inputPath);
+            string[] nameImgResult = nameImg.Split('.');
+            string nameImgMain = nameImgResult[0];
+
+            if (src.Empty())
+            {
+                Dbg.Info($"  Doc anh that bai: {inputPath}");
+                return KetQuaXuLy.Loi;
+            }
+
+            Dbg.Info($"  Anh vao: {src.Width}x{src.Height}");
+            Dbg.Reset();
+
+            using Mat grayImg = new();
+            Cv2.CvtColor(src, grayImg, ColorConversionCodes.BGR2GRAY);
+            Dbg.Show(grayImg, "grayImg");
+
+            using var laplacianImg = new Mat();
+            Cv2.Laplacian(grayImg, laplacianImg, MatType.CV_16S, 3);
+            Dbg.Show(laplacianImg, "laplacianImg");
+
+            using var absLaplacianImg = new Mat();
+            Cv2.ConvertScaleAbs(laplacianImg, absLaplacianImg);
+            Dbg.Show(absLaplacianImg, "absLaplacianImg");
+
+            using Mat threshLaplacian = new Mat();
+            Cv2.Threshold(absLaplacianImg, threshLaplacian, 60, 255, ThresholdTypes.Binary);
+            Dbg.Show(threshLaplacian, "threshLaplacian");
+
+            using Mat cleanMap = new Mat();
+            using var kernel_ = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(3, 3));
+            Cv2.Erode(threshLaplacian, cleanMap, kernel_, iterations: 1);
+            Cv2.Dilate(cleanMap, cleanMap, kernel_, iterations: 1);
+            Dbg.Show(cleanMap, "cleanMap");
+
+            using var energaMap = new Mat();
+            Cv2.BoxFilter(cleanMap, energaMap, MatType.CV_32F, new Size(15, 15), normalize: false, borderType: BorderTypes.Reflect);
+
+
+            Cv2.MinMaxLoc(energaMap, out _, out _, out _, out Point maxLoc);
+            
+            int x = Math.Clamp(maxLoc.X - (512/2), 0, src.Width - 512);
+            int y = Math.Clamp(maxLoc.Y - (512 / 2), 0, src.Height - 512);
+
+            Rect cropRoi = new Rect(x, y, 512, 512);
+
+            using Mat imgSrcRoi = new Mat(src, cropRoi).Clone();
+            Dbg.Show(imgSrcRoi, "imgSrcRoi");
+
+
+
+            Mat results = new();
+            results = imgSrcRoi.Clone();
+            if (results is null || results.Empty())
+            {
+                Dbg.Info("  Khong do duoc vung nao giam Config.CannyLow or Config.MinAreaRatio.");
+                 LuuAnhG2(src, _outDirNotFound, $"{nameImgMain}");
+                return KetQuaXuLy.KhongThayPhanNho;
+            }
+            try
+            {
+                LuuAnhG2(src, _outDirG2, $"{nameImgMain}");
+                return KetQuaXuLy.ThanhCong;
+            }
+            finally
+            {
+            }
+            //ketQua = XuLyMotAnh(inputPath);
         }
         catch (Exception ex)
         {
