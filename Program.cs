@@ -1,6 +1,7 @@
 using OpenCvSharp;
 using OpenCvSharp.XImgProc;
 using OpenCvSharp.XPhoto;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net.WebSockets;
 using System.Numerics;
@@ -80,8 +81,9 @@ public static class Config
     public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-36-30.bmp";
 
     
-    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh1";
-    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh2";
+    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\CamChupTrenXuong\\XoayTraiPhai\\XoayPhaiX\\Doc";
+    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh3";
+    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh1";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\TRAIN_AI\\TEST";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\ng";
    // public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\Ng_";
@@ -122,9 +124,11 @@ public static class ProtrusionCfg
 
 public static class Program
 {
-    private static readonly string _outDirG2 = "MatMLCCX";
+    private static readonly string _outDirG2 = "OK_";
+    private static readonly string _outDirNgang = "Ngang";
+    private static readonly string _outDirDoc = "Doc";
 
-    private static readonly string _outDirNotFound = "khongthay_MatMLCCX";
+    private static readonly string _outDirNotFound = "KhongThay";
 
     [ThreadStatic] private static string? _baseName;
     [ThreadStatic] private static int _demAnhG2;
@@ -231,15 +235,9 @@ public static class Program
             }
         }
 
-        Console.WriteLine();
-        Console.WriteLine($"===== XONG {danhSachAnh.Count} anh trong {(DateTime.Now - thoiDiemBatDau).TotalSeconds:0.0}s" +
-                          $"{(chaySongSong ? $" ({soLuong} luong)" : "")} =====");
-        Console.WriteLine($"  bat duoc phan nho  : {soThanhCong}");
-        Console.WriteLine($"  khong thay phan nho: {soKhongThayPhanNho}");
-        Console.WriteLine($"  loi                : {soLoi}");
-        Console.WriteLine($"  anh ket qua nam trong: {Path.GetFullPath(_outDirG2)}");
 
-        XuatExcelAlign();
+
+        //XuatExcelAlign();
 
         Dbg.CloseAll();
         return soLoi > 0 ? 2 : 0;
@@ -390,44 +388,19 @@ public static class Program
 
         using var result = CropLargestRegion(src, nameImgMain);
 
-        
 
-
-        // Kiem tra null TRUOC khi Show — khong thi anh nao khong do duoc vung
-        // se chet o Dbg.Show voi NullReference, che mat ly do that su.
         if (result is null || result.Empty())
         {
             Dbg.Info("  Khong do duoc vung nao giam Config.CannyLow or Config.MinAreaRatio.");
-            LuuAnhG2(src, _outDirNotFound, $"{nameImgMain}");
+           // LuuAnhG2(src, _outDirNotFound, $"{nameImgMain}");
             return KetQuaXuLy.KhongThayPhanNho;
         }
-
-        //Dbg.Show(result, "Anh sau khi cat");
-
-        //Directory.CreateDirectory(_outDirG2);
-        //var outPath = Path.Combine(_outDirG2, _baseName + "_crop.png");
-
-        //var cacGoc = CropSmallRegion(result, nameImgMain);
         try
         {
-            //var gocBatDuoc = cacGoc.Where(g => g.Anh is not null).ToList();
-
-            //if (gocBatDuoc.Count != 2)
-            //{
-            //    Dbg.Info("  Giai doan 2: Ca 4 goc deu chua bat duoc phan nho " +
-            //             "(xem log 'ratio mask' va anh 6_Residual cua tung goc).");
-            //    LuuAnhG2(src, _outDirNotFound, $"{nameImgMain}");
-            //    return KetQuaXuLy.KhongThayPhanNho;
-            //}
-
-            //var motTa = string.Join(", ", gocBatDuoc.Select(g => $"{g.Goc}({g.Anh!.Width}x{g.Anh.Height})"));
-            //Dbg.Info($"  Giai doan 2: bat duoc {gocBatDuoc.Count}/{cacGoc.Count} goc -> {motTa}; " +
-            //         $"da luu {_demAnhG2} anh.");
             return KetQuaXuLy.ThanhCong;
         }
         finally
         {
-            //foreach (var g in cacGoc) g.Anh?.Dispose();
         }
     }
 
@@ -1087,8 +1060,7 @@ public static class Program
         // offset cửa sổ (xem ChuanHoaKhungYolo), nhưng đo nghiêng/lệch thì dùng luôn hệ này.
         var ketQuaAi = AiYolo.Chay(vungMLCCMain);
 
-        ProcessMLCCPipeline(vungMLCCMain, ketQuaAi);
-
+        bool result = ProcessMLCCPipeline(vungMLCCMain, ketQuaAi, nameImgMain);
 
         //Text hiển thị trên ảnh kết quả AI NG
         //string textNG = "NG";
@@ -1136,7 +1108,7 @@ public static class Program
         //            if (w <= 2 || h <= 2) continue;
         //            var roiRect = new Rect(x, y, w, h);
         //            // 2. Ép kiểu ảnh tham chiếu (Không tốn RAM Clone)
-                    
+
         //            using Mat roi = new Mat(veAi_, roiRect); // Cần xửa lại vungMLCCMain vì đây không phải vùng AI tìm thấy
         //            using Mat gray = new Mat();
         //            using Mat binary = new Mat();
@@ -1175,7 +1147,7 @@ public static class Program
         //                }
         //            }
         //            //-------------------------------
- 
+
         //        }
         //        Dbg.Show(veAi_, "KetQuaAI");
         //    }
@@ -1221,16 +1193,18 @@ public static class Program
 
     }
 
-    public static void ProcessMLCCPipeline(Mat vungMLCCMain, List<AiKetQua> ketQuaAi)
+    public static bool ProcessMLCCPipeline(Mat vungMLCCMain, List<AiKetQua> ketQuaAi, string nameImgMain)
     {
+        bool trueOrFalse = false;
         // 1. Kiểm tra điều kiện tiên quyết (SLA Gate)
         bool coMLCC = ketQuaAi.Any(x => x.TenLop.Contains("MLCC", StringComparison.OrdinalIgnoreCase));  
-        //coMLCC = true;
+        coMLCC = true;
         if (ketQuaAi==null || ketQuaAi.Count()<=0 || 
             ketQuaAi.Any(x => x.TenLop.Contains("NG", StringComparison.OrdinalIgnoreCase)) || !coMLCC)
         {
             using Mat veAi_ = vungMLCCMain.Clone();
             Dbg.Info("  AI: [NG] Không có kết quả hoặc thiếu nhãn MLCC.");
+            VeThongBaoNG(veAi_, "NG", Scalar.Red);
             Dbg.Show(veAi_, "00_KetQua_NG");
             foreach (var kq in ketQuaAi)
             {
@@ -1248,7 +1222,7 @@ public static class Program
                                 new Point(kq.KhungInt.X, Math.Max(14, kq.KhungInt.Y - 4)),
                                 HersheyFonts.HersheySimplex, 0.45, Scalar.Lime, 1);
                 }
-
+                return trueOrFalse;
             }
             if (Dbg.Enabled)
             {
@@ -1256,7 +1230,7 @@ public static class Program
                 VeThongBaoNG(veAi_, "NG", Scalar.Red);
                 Dbg.Show(veAi_, "00_KetQua_NG");
             }
-            return;
+            return trueOrFalse;
         }
 
         // 2. Trích xuất tâm chính xác từng ROI từ ẢNH GỐC SẠCH
@@ -1264,7 +1238,7 @@ public static class Program
         for (int i = 0; i < ketQuaAi.Count; i++)
         {
             var kq = ketQuaAi[i];
-            if (TinhTamChinhXac(vungMLCCMain, kq, out Point2d tamThucTe, out Mat roiDebugBinary))
+            if (TinhTamChinhXac(vungMLCCMain, kq, out Point2d tamThucTe, out Mat roiDebugBinary, 1500))
             {
                 danhSachDiem.Add((kq.TenLop, tamThucTe));
 
@@ -1283,46 +1257,59 @@ public static class Program
             using Mat veAi_ = vungMLCCMain.Clone();
 
             // 3.1. Vẽ Bounding Box thô của AI
-            foreach (var kq in ketQuaAi)
-            {
-                Cv2.Rectangle(veAi_, kq.KhungInt, Scalar.Lime, 1);
-                Cv2.PutText(veAi_, $"{kq.TenLop} {kq.DoTinCay:0.00}",
-                            new Point(kq.KhungInt.X, Math.Max(14, kq.KhungInt.Y - 4)),
-                            HersheyFonts.HersheySimplex, 0.45, Scalar.Lime, 1);
-            }
+            //foreach (var kq in ketQuaAi)
+            //{
+            //    Cv2.Rectangle(veAi_, kq.KhungInt, Scalar.Lime, 1);
+            //    Cv2.PutText(veAi_, $"{kq.TenLop} {kq.DoTinCay:0.00}",
+            //                new Point(kq.KhungInt.X, Math.Max(14, kq.KhungInt.Y - 4)),
+            //                HersheyFonts.HersheySimplex, 0.45, Scalar.Lime, 1);
+            //}
 
             // 3.2. Vẽ điểm tâm chính xác (Crosshair Magenta)
-            foreach (var item in danhSachDiem)
-            {
-                Cv2.DrawMarker(veAi_, new Point((int)item.Tam.X, (int)item.Tam.Y),
-                               Scalar.Magenta, MarkerTypes.Cross, 16, 2);
-            }
+            //foreach (var item in danhSachDiem)
+            //{
+            //    Cv2.DrawMarker(veAi_, new Point((int)item.Tam.X, (int)item.Tam.Y),
+            //                   Scalar.Magenta, MarkerTypes.Cross, 16, 2);
+            //}
+
+
             Dbg.Show(veAi_, "02_KetQua_TongThe");
             // 3.3. Dựng các đường bao Đỏ - Xanh
-            
+
             var toaDoList = danhSachDiem.Where(x=>x.TenLop.ToUpper().Contains("TOADO")).Select(x => x.Tam).ToList();
+
             var toaDoMLCC = ketQuaAi.Where(x => x.TenLop.ToUpper().Contains("MLCC")).FirstOrDefault();
             if(toaDoMLCC == null)
             {
                 Dbg.Info("  AI: [NG] Không tìm thấy nhãn MLCC.");
                 VeThongBaoNG(veAi_, "NG", Scalar.Red);
                 Dbg.Show(veAi_, "02_KetQua_TongThe");
-                return;
+                return trueOrFalse;
             }
-            bool kqVung = DungHeTrucVaDuongBao(veAi_, toaDoList, toaDoMLCC, 10);
+            bool kqVung_ = DungHeTrucVaDuongBao_New(veAi_, toaDoList, toaDoMLCC, 10, nameImgMain);
+            //bool kqVung = DungHeTrucVaDuongBao(veAi_, toaDoList, toaDoMLCC, 30);
+            bool kqVung = true;
             
-            if(kqVung)
-            {
-                VeThongBaoNG(veAi_, "OK", Scalar.LimeGreen);
-            }    
-            else
-            {
-                VeThongBaoNG(veAi_, "NG", Scalar.Red);
-            }
+            //if(kqVung)
+            //{
+            //    VeThongBaoNG(veAi_, "OK", Scalar.LimeGreen);
+            //    LuuAnhG2(veAi_, _outDirG2, $"_{nameImgMain}");
+            //    trueOrFalse = true;
+            //}    
+            //else
+            //{
+            //    VeThongBaoNG(veAi_, "NG", Scalar.Red);
+            //    LuuAnhG2(veAi_, _outDirNotFound, $"_{nameImgMain}");
+            //    trueOrFalse = false;
+            //}
 
-            Dbg.Show(veAi_, "02_KetQua_TongThe");
+            //Dbg.Show(veAi_, "02_KetQua_TongThe");
+            
         }
+        return trueOrFalse;
     }
+
+
 
     private static Point2d? TimGiaoDiem(Point2d p1, Point2d d1, Point2d p2, Point2d d2)
     {
@@ -1343,7 +1330,7 @@ public static class Program
     /// <summary>
     /// Bóc tách ROI sạch, Threshold và tính trọng tâm bằng Image Moments.
     /// </summary>
-    private static bool TinhTamChinhXac(Mat anhGoc, AiKetQua kq, out Point2d tamThucTe, out Mat roiBinaryDebug)
+    private static bool TinhTamChinhXac(Mat anhGoc, AiKetQua kq, out Point2d tamThucTe, out Mat roiBinaryDebug, double dienTichToiThieu)
     {
         tamThucTe = default;
         roiBinaryDebug = null;
@@ -1381,7 +1368,7 @@ public static class Program
         Point[] maxContour = contours.OrderByDescending(c => Cv2.ContourArea(c)).First();
         Moments m = Cv2.Moments(maxContour);
 
-        if (m.M00 > 10) // Diện tích tối thiểu để loại bỏ nhiễu hạt
+        if (m.M00 > dienTichToiThieu) // Diện tích tối thiểu để loại bỏ nhiễu hạt
         {
             double localCx = m.M10 / m.M00;
             double localCy = m.M01 / m.M00;
@@ -1394,6 +1381,234 @@ public static class Program
         binary.Dispose();
         return false;
     }
+
+    private static bool DungHeTrucVaDuongBao_New(Mat img, List<Point2d> points, AiKetQua kqMLCC, double nguongLechChoPhep = 30, string nameImg="")
+    {
+        bool isPassViTri = false;
+        bool isVertical = true; 
+        Point2d dirMain, dirSub;
+        if (isVertical)
+        {
+            Mat imgTest = img.Clone();
+            Dbg.Show(imgTest, "a");
+            Dbg.Show(img, "a");
+            DetectWhitePads(imgTest, nameImg);
+        }
+        int a = 2;
+            
+        return isPassViTri;
+    }
+
+    public static List<Rect> DetectWhitePads(Mat srcBgr, string nameImg)
+    {
+        Mat srcTest = srcBgr.Clone();
+        var padBoxes = new List<Rect>();
+        // 1. Tách kênh BGR - Kênh Blue ở vị trí index 0
+        Mat[] channels = Cv2.Split(srcBgr);
+        using Mat blueChannel = channels[0];
+        channels[1].Dispose(); // Giải phóng Green
+        channels[2].Dispose(); // Giải phóng Red
+
+        // 2. Threshold kênh Blue với ngưỡng cao (loại bỏ màu vàng)
+        using Mat binary = new Mat();
+        Cv2.Threshold(blueChannel, binary, 230, 255, ThresholdTypes.Binary);
+        Dbg.Show(binary, "a");
+        // 3. Khử nhiễu bằng Morphological Opening (Erode rồi Dilate)
+        using Mat kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(10,10));
+        using Mat kernel_2 = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(30, 30));
+        using Mat kernel_3 = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(10, 10));
+        using Mat cleanBinary = new Mat();
+        Cv2.MorphologyEx(binary, cleanBinary, MorphTypes.Close, kernel);
+        Dbg.Show(cleanBinary, "a");
+        Cv2.MorphologyEx(cleanBinary, cleanBinary, MorphTypes.Open, kernel_2);
+        Dbg.Show(cleanBinary, "a");
+
+        // 4. Tìm Contours ngoài cùng
+        Cv2.FindContours(
+            cleanBinary,
+            out Point[][] contours,
+            out HierarchyIndex[] hierarchy,
+            RetrievalModes.External,
+            ContourApproximationModes.ApproxSimple
+        );
+
+        // 5. Lọc Blobs theo diện tích và vị trí bên phải
+        int minArea = 300; // Điều chỉnh tùy theo độ phân giải FOV thực tế
+        int midX = srcBgr.Width / 2;
+
+        var validPads = new List<(Point[] Contour, double Area, Rect Box)>();
+
+        foreach (var contour in contours)
+        {
+            double area = Cv2.ContourArea(contour);
+            if (area < minArea) continue;
+
+            Rect box = Cv2.BoundingRect(contour);
+
+            // 2 đốm pad luôn nằm về phía bên phải so với thân MLCC
+            if (box.X > midX)
+            {
+                validPads.Add((contour, area, box));
+            }
+        }
+
+        // 6. Lấy 2 đốm to nhất và sắp xếp từ trên xuống dưới
+        var sortedPads = validPads
+            .OrderByDescending(p => p.Area)
+            .Take(2)
+            .OrderBy(p => p.Box.Y
+            )
+            .Select(p => p.Box)
+            .ToList();
+
+        if(sortedPads.Count>=2)
+        {
+            Rect padTop = default;
+            Rect padBottom = default;
+            int y = 10;
+
+            padTop = sortedPads[0].Y < sortedPads[1].Y ? sortedPads[0] : sortedPads[1];
+            padBottom = sortedPads[0].Y < sortedPads[1].Y ? sortedPads[1] : sortedPads[0];
+
+            //Cv2.Rectangle(srcBgr, padTop, new Scalar(0, 0, 255), 2);
+            //Point center = new Point(padTop.X + padTop.Width / 2, padTop.Y + padTop.Height / 2);
+            //Cv2.Circle(srcBgr, center, 3, new Scalar(0, 255, 0), -1);
+
+            CreateComponentRoi(srcBgr, padTop, padBottom, 10, 10, 80, 40, srcTest, nameImg);
+            //foreach (var pad in sortedPads)
+            //{   
+            //    Cv2.Rectangle(srcBgr, pad, new Scalar(0,0,255), 2);
+            //    Point center = new Point(pad.X + pad.Width / 2, pad.Y + pad.Height / 2);
+            //    Cv2.Circle(srcBgr, center, 3, new Scalar(0, 255, 0), -1);
+            //}
+            Dbg.Show(srcBgr, "a");
+        }    
+
+        
+
+        return sortedPads;
+    }
+
+    /// <summary>
+    /// Tạo khung chữ nhật số 4 bao quanh tụ từ 2 Bounding Box của Pad hàn
+    /// </summary>
+    /// <param name="padTop">Bounding Box của Pad trên</param>
+    /// <param name="padBottom">Bounding Box của Pad dưới</param>
+    /// <param name="offsetX">Khoảng dịch sang trái (sang phía con tụ)</param>
+    /// <param name="offsetY">Khoảng dịch tinh chỉnh lên/xuống</param>
+    /// <param name="roiWidth">Chiều rộng khung số 4</param>
+    /// <param name="roiHeight">Chiều cao khung số 4</param>
+    public static Rect CreateComponentRoi(
+        Mat img,
+        Rect padTop,
+        Rect padBottom,
+        int offsetX,
+        int offsetY,
+        int roiWidth,
+        int roiHeight,
+        Mat debugDrawMat = null,
+        string nameImg = null)
+    {
+        offsetX = -245;
+        offsetY = 45;
+        roiHeight = 200;
+        roiWidth = 120;
+        // -------------------------------------------------------------
+        // BƯỚC 1: Xác định mép trái của 2 Pad và tạo đường Line 1
+        // -------------------------------------------------------------
+        Point2d p1_top = new Point2d(padTop.X, padTop.Y + padTop.Height / 2.0);
+        VeToaDoDiem(img, p1_top, "p1_top", Scalar.Red);
+        Point2d p1_bot = new Point2d(padBottom.X, padBottom.Y + padBottom.Height / 2.0);
+        VeToaDoDiem(img, p1_bot, "p1_bot", Scalar.Red);
+        Dbg.Show(img, "a");
+
+
+
+        // Vector chỉ phương trục dọc v = P_bot - P_top
+        Point2d v_dir = new Point2d(p1_bot.X - p1_top.X, p1_bot.Y - p1_top.Y);
+        double len = Math.Sqrt(v_dir.X * v_dir.X + v_dir.Y * v_dir.Y);
+        VeToaDoDiem(img, v_dir, "v_dir", Scalar.Red);
+        Point2d u_dir = new Point2d(v_dir.X / len, v_dir.Y / len); // Unit vector dọc
+        VeToaDoDiem(img, u_dir, "u_dir", Scalar.Red);
+        Dbg.Show(img, "a");
+        // Vector pháp tuyến vuông góc hướng sang trái n = (u_y, -u_x)
+        Point2d n_left = new Point2d(u_dir.Y, -u_dir.X);
+        VeToaDoDiem(img, n_left, "n_left", Scalar.Red);
+        Dbg.Show(img, "a");
+        // -------------------------------------------------------------
+        // BƯỚC 2: Tìm tâm khoảng hở giữa 2 Pad (Line 3 màu tím)
+        // -------------------------------------------------------------
+        Point2d p_edgeTop = new Point2d(padTop.X + padTop.Width / 2.0, padTop.Bottom);
+        VeToaDoDiem(img, p_edgeTop, "p_edgeTop", Scalar.Red);
+        Point2d p_edgeBot = new Point2d(padBottom.X + padBottom.Width / 2.0, padBottom.Top);
+        VeToaDoDiem(img, p_edgeBot, "p_edgeBot", Scalar.Red);
+        Dbg.Show(img, "a");
+        // Trung điểm nằm giữa 2 Pad
+        Point2d midPadCenter = new Point2d(
+            (p_edgeTop.X + p_edgeBot.X) / 2.0,
+            (p_edgeTop.Y + p_edgeBot.Y) / 2.0
+        );
+        VeToaDoDiem(img, midPadCenter, "midPadCenter", Scalar.Red);
+        Dbg.Show(img, "a");
+        // -------------------------------------------------------------
+        // BƯỚC 3: Giao điểm tâm linh kiện và tạo Bounding Box số 4
+        // -------------------------------------------------------------
+        // Chiếu từ midPadCenter sang trái theo khoảng cách offsetX và bù trừ offsetY theo trục dọc
+        //Point2d chipCenter = new Point2d(
+        //    midPadCenter.X + offsetX + (u_dir.X * offsetY),
+        //    midPadCenter.Y - (u_dir.Y * offsetY)
+        //);
+        Point2d chipCenter = new Point2d(
+            midPadCenter.X + (n_left.X * offsetX) + (u_dir.X * offsetY),
+            midPadCenter.Y + (n_left.Y * offsetX) + (u_dir.Y * offsetY)
+        );
+        VeToaDoDiem(img, chipCenter, "chipCenter", Scalar.Red);
+        Dbg.Show(img, "a");
+        // Khung chữ nhật số 4
+        int roiX = (int)Math.Round(chipCenter.X - roiWidth / 2.0);
+        int roiY = (int)Math.Round(chipCenter.Y - roiHeight / 2.0);
+        //roiX = (int)chipCenter.X;
+        //roiY = (int)chipCenter.Y;
+        Point rectRoiXY = new(roiX, roiY);
+        VeToaDoDiem(img, rectRoiXY, "ROIXY_RECT", Scalar.Red);
+        Dbg.Show(img, "a");
+        //Rect componentRoi = new Rect(roiX, roiY, roiWidth, roiHeight);
+        Rect componentRoi = new Rect(roiX, roiY, roiWidth, roiHeight);
+        Cv2.Rectangle(img, componentRoi, new Scalar(0, 0, 0), 2);
+        Dbg.Show(img, "a");
+        LuuAnhG2(img, _outDirG2, $"{nameImg}");
+        // -------------------------------------------------------------
+        // VẼ MINH HỌA LÊN ẢNH DEBUG (NẾU CÓ TRUYỀN MAT VÀO)
+        // -------------------------------------------------------------
+        //if (debugDrawMat != null)
+        //{
+        //    // Vẽ Line 1 (đường đỏ qua mép trái 2 pad)
+        //    Cv2.Line(debugDrawMat, (Point)p1_top, (Point)p1_bot, new Scalar(0, 0, 255), 2);
+        //    Dbg.Show(debugDrawMat, "a");
+        //    // Vẽ Line 2 (đường đỏ tịnh tiến qua tâm tụ)
+        //    Point2d line2_p1 = new Point2d(p1_top.X - offsetX, p1_top.Y - 50);
+        //    Point2d line2_p2 = new Point2d(p1_bot.X - offsetX, p1_bot.Y + 50);
+        //    Cv2.Line(debugDrawMat, (Point)line2_p1, (Point)line2_p2, new Scalar(0, 0, 255), 2);
+        //    Dbg.Show(debugDrawMat, "a");
+        //    // Vẽ Line 3 (đường tím ngang vuông góc)
+        //    Cv2.Line(debugDrawMat, (Point)midPadCenter, (Point)chipCenter, new Scalar(255, 0, 255), 2);
+        //    Dbg.Show(debugDrawMat, "a");
+        //    // Vẽ Khung chữ nhật số 4 (Màu đen/xanh lá đậm)
+        //    Cv2.Rectangle(debugDrawMat, componentRoi, new Scalar(0, 0, 0), 2);
+        //    Dbg.Show(debugDrawMat, "a");
+        //    // Vẽ các chấm điểm neo
+        //    Cv2.Circle(debugDrawMat, (Point)midPadCenter, 4, new Scalar(255, 0, 255), -1);
+        //    Dbg.Show(debugDrawMat, "a");
+        //    Cv2.Circle(debugDrawMat, (Point)chipCenter, 4, new Scalar(0, 255, 0), -1);
+        //    Dbg.Show(debugDrawMat, "a");
+        //    Dbg.Show(debugDrawMat, "a");
+        //}
+
+        return componentRoi;
+    }
+
+
+
     private static bool DungHeTrucVaDuongBao(Mat img, List<Point2d> points, AiKetQua kqMLCC, double nguongLechChoPhep = 30)
     {
         if (points == null || points.Count < 3 || kqMLCC == null) return false;
@@ -1434,6 +1649,17 @@ public static class Program
         Point2d pMain1 = sortedByMain.First(); // Điểm đầu
         Point2d pMain2 = sortedByMain.Last();  // Điểm cuối
 
+        if(Dbg.Enabled)
+        {
+            using Mat test = img.Clone();
+            VeToaDoDiem(test, pMain1, "pMain1", Scalar.Red);
+            Dbg.Show(test, "test");
+
+            VeToaDoDiem(test, pMain2, "pMain1", Scalar.Red);
+            Dbg.Show(test, "test");
+
+        }    
+
         // Tinh chỉnh vector trục chính thực tế từ 2 điểm biên bắt được
         double dMx = pMain2.X - pMain1.X;
         double dMy = pMain2.Y - pMain1.Y;
@@ -1447,6 +1673,30 @@ public static class Program
         // Tâm đối xứng thực tế xác định từ trung điểm của 2 điểm biên trục chính
         Point2d center = new Point2d((pMain1.X + pMain2.X) / 2.0, (pMain1.Y + pMain2.Y) / 2.0);
         double halfLenMain = lenMain / 2.0;
+
+
+
+        // [DEBUG BƯỚC 2]: Xem 2 điểm trục chính pMain1, pMain2, trục nối và Tâm Center
+        if (Dbg.Enabled)
+        {
+            using Mat dbg2 = img.Clone();
+            // Nối đường trục chính giữa 2 điểm cực
+            Cv2.Line(dbg2, (Point)pMain1, (Point)pMain2, Scalar.Red, 2, LineTypes.AntiAlias);
+
+            // Đánh dấu pMain1 (Đỏ) và pMain2 (Cam)
+            Cv2.Circle(dbg2, (Point)pMain1, 5, Scalar.Red, -1);
+            Cv2.PutText(dbg2, "pMain1", new Point((int)pMain1.X + 6, (int)pMain1.Y), HersheyFonts.HersheySimplex, 0.45, Scalar.Red, 1);
+
+            Cv2.Circle(dbg2, (Point)pMain2, 5, Scalar.Orange, -1);
+            Cv2.PutText(dbg2, "pMain2", new Point((int)pMain2.X + 6, (int)pMain2.Y), HersheyFonts.HersheySimplex, 0.45, Scalar.Orange, 1);
+
+            // Vẽ tâm đối xứng (Crosshair Xanh Cyan)
+            Cv2.DrawMarker(dbg2, (Point)center, Scalar.Cyan, MarkerTypes.Cross, 18, 2);
+            Cv2.PutText(dbg2, $"Center({center.X:0.0},{center.Y:0.0})", new Point((int)center.X + 8, (int)center.Y + 4),
+                        HersheyFonts.HersheySimplex, 0.4, Scalar.Cyan, 1);
+
+            Dbg.Show(dbg2, "02_TrucChinh_Va_TamCenter");
+        }
 
         // 3. TÍNH ĐỘ RỘNG TRỤC PHỤ (HALF WIDTH) TỪ CÁC ĐIỂM HÔNG (SIDE POINTS)
         // Lọc ra các điểm không phải là 2 điểm biên trên trục chính
@@ -1550,7 +1800,42 @@ public static class Program
         Dbg.Show(img, "tam Crosshair");
         return isPassViTri;
     }
+    /// <summary>
+    /// Vẽ chấm tròn và chuỗi tọa độ (X, Y) kèm nền đen chống lóa
+    /// </summary>
+    private static void VeToaDoDiem(Mat img, Point2d pt, string tenDiem, Scalar mauSac)
+    {
+        // 1. Vẽ tâm điểm (Chấm tròn + Crosshair nhỏ)
+        Cv2.Circle(img, (Point)pt, 3, mauSac, -1);
+        Cv2.DrawMarker(img, (Point)pt, mauSac, MarkerTypes.Cross, 10, 1);
 
+        // 2. Chuẩn bị chuỗi hiển thị: "P1 (120.5, 340.2)"
+        string text = string.IsNullOrEmpty(tenDiem)
+            ? $"({pt.X:0.1}, {pt.Y:0.1})"
+            : $"{tenDiem}: ({pt.X:0.1}, {pt.Y:0.1})";
+
+        var font = HersheyFonts.HersheySimplex;
+        double scale = 0.4;
+        int thickness = 1;
+
+        // 3. Tính toán kích thước chữ để vẽ nền đen chống chìm
+        var textSize = Cv2.GetTextSize(text, font, scale, thickness, out int baseline);
+        Point textPos = new Point((int)pt.X + 6, (int)pt.Y - 6);
+
+        // Tránh chữ bị tràn khỏi góc trên ảnh
+        if (textPos.Y - textSize.Height < 0)
+            textPos.Y = (int)pt.Y + textSize.Height + 10;
+        if (textPos.X + textSize.Width > img.Width)
+            textPos.X = (int)pt.X - textSize.Width - 6;
+
+        Rect bgRect = new Rect(textPos.X - 2, textPos.Y - textSize.Height - 2, textSize.Width + 4, textSize.Height + baseline + 4);
+
+        // Vẽ hộp nền đen mờ
+        Cv2.Rectangle(img, bgRect, Scalar.Black, -1);
+
+        // 4. Vẽ chữ lên trên nền
+        Cv2.PutText(img, text, textPos, font, scale, mauSac, thickness, LineTypes.AntiAlias);
+    }
     /// <summary>
     /// Tìm cặp điểm xa nhất (Trục dài) và dựng các đường thẳng trực giao.
     /// </summary>
