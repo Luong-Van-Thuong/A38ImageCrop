@@ -18,6 +18,7 @@
        Khi chay tu IDE thi AiYolo van tu do nguoc len goc project neu thieu. -->
   <ItemGroup>
     <None Include="modelAI\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="modelAICamCheo\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

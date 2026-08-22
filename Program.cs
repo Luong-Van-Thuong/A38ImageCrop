@@ -82,7 +82,8 @@ public static class Config
     public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-36-30.bmp";
 
     
-    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\ChupNghieng\\nghiengLenX\\NghiengTraiPhai";
+    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\ChupNghieng\\nghiengLenX\\NG";
+    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\ChupNghieng\\nghiengLenX\\all";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh3";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh1";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\TRAIN_AI\\TEST";
@@ -129,7 +130,14 @@ public static class Program
     private static readonly string _outDirNgang = "Ngang";
     private static readonly string _outDirDoc = "Doc";
 
-    private static readonly string _outDirNotFound = "KhongThay";
+    private static readonly string _outDirNotFound = "AIKhongTimThay_";
+
+    /// <summary>Nơi ghi ảnh crop đã vẽ khung của model cam chéo (modelAICamCheo).</summary>
+    private static readonly string _outDirAiCamCheo = "VungMLCC";
+
+    /// <summary>Nơi ghi ảnh đã vẽ kết quả đo góc nghiêng. Tên file bắt đầu bằng góc đo được
+    /// nên sắp theo tên là xem được ngay dải góc từ thẳng tới nghiêng nhất.</summary>
+    private static readonly string _outDirGocNghieng = "GocNghieng_";
 
     [ThreadStatic] private static string? _baseName;
     [ThreadStatic] private static int _demAnhG2;
@@ -168,8 +176,12 @@ public static class Program
             return PatModel.ChayTrichModel(args);
 
         // Bai hoc do mau ban tho: chay tung buoc mot de hieu shape-based tu goc.
-        if (args.Contains("--hoc")) 
+        if (args.Contains("--hoc"))
             return HocDoMau.Chay(args);
+
+        // Bai tu MLCC co nghieng len khong: do goc alpha bang do mau theo hinh dang.
+        if (args.Contains("--nghieng"))
+            return YeaJoungCheckCoiNghieng.Chay(args);
 
         int i = Array.IndexOf(args, "--only");
         if (i >= 0 && i + 1 < args.Length) Dbg.Filter = args[i + 1];
@@ -251,6 +263,9 @@ public static class Program
 
 
         //XuatExcelAlign();
+
+        // Tra InferRequest cua moi luong ve cho OpenVINO. Chay sau khi moi luong da xong.
+        AiYoloCamCheo.Dong();
 
         Dbg.CloseAll();
         return soLoi > 0 ? 2 : 0;
@@ -341,58 +356,226 @@ public static class Program
             Dbg.Reset();
 
             using Mat grayImg = new();
-            Cv2.CvtColor(src, grayImg, ColorConversionCodes.BGR2GRAY);
-            Dbg.Show(grayImg, "grayImg");
+            Dbg.Show(src, "a");
 
-            using var laplacianImg = new Mat();
-            Cv2.Laplacian(grayImg, laplacianImg, MatType.CV_16S, 3);
-            Dbg.Show(laplacianImg, "laplacianImg");
+            //Cv2.Resize(src, grayImg, new Size(640, 640), interpolation: InterpolationFlags.Linear);
+            //Cv2.CvtColor(src, grayImg, ColorConversionCodes.BGR2GRAY);
+            //Dbg.Show(grayImg, "grayImg");
 
-            using var absLaplacianImg = new Mat();
-            Cv2.ConvertScaleAbs(laplacianImg, absLaplacianImg);
-            Dbg.Show(absLaplacianImg, "absLaplacianImg");
+            //using var laplacianImg = new Mat();
+            //Cv2.Laplacian(grayImg, laplacianImg, MatType.CV_16S, 3);
+            //Dbg.Show(laplacianImg, "laplacianImg");
 
-            using Mat threshLaplacian = new Mat();
-            Cv2.Threshold(absLaplacianImg, threshLaplacian, 60, 255, ThresholdTypes.Binary);
-            Dbg.Show(threshLaplacian, "threshLaplacian");
+            //using var absLaplacianImg = new Mat();
+            //Cv2.ConvertScaleAbs(laplacianImg, absLaplacianImg);
+            //Dbg.Show(absLaplacianImg, "absLaplacianImg");
 
-            using Mat cleanMap = new Mat();
-            using var kernel_ = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(3, 3));
-            Cv2.Erode(threshLaplacian, cleanMap, kernel_, iterations: 1);
-            Cv2.Dilate(cleanMap, cleanMap, kernel_, iterations: 1);
-            Dbg.Show(cleanMap, "cleanMap");
+            //using Mat threshLaplacian = new Mat();
+            //Cv2.Threshold(absLaplacianImg, threshLaplacian, 60, 255, ThresholdTypes.Binary);
+            //Dbg.Show(threshLaplacian, "threshLaplacian");
 
-            using var energaMap = new Mat();
-            Cv2.BoxFilter(cleanMap, energaMap, MatType.CV_32F, new Size(15, 15), normalize: false, borderType: BorderTypes.Reflect);
+            //using Mat cleanMap = new Mat();
+            //using var kernel_ = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(5, 5));
+            //Cv2.Erode(threshLaplacian, cleanMap, kernel_, iterations: 1);
+            //Cv2.Dilate(cleanMap, cleanMap, kernel_, iterations: 1);
+            //Dbg.Show(cleanMap, "cleanMap");
 
-
-            Cv2.MinMaxLoc(energaMap, out _, out _, out _, out Point maxLoc);
-            
-            int x = Math.Clamp(maxLoc.X - (512/2), 0, src.Width - 512);
-            int y = Math.Clamp(maxLoc.Y - (512 / 2), 0, src.Height - 512);
-
-            Rect cropRoi = new Rect(x, y, 512, 512);
-
-            using Mat imgSrcRoi = new Mat(src, cropRoi).Clone();
-            Dbg.Show(imgSrcRoi, "imgSrcRoi");
+            //using var energaMap = new Mat();
+            //Cv2.BoxFilter(cleanMap, energaMap, MatType.CV_32F, new Size(15, 15), normalize: false, borderType: BorderTypes.Reflect);
 
 
+            //Cv2.MinMaxLoc(energaMap, out _, out _, out _, out Point maxLoc);
+            int kinhThuocCrop = 640;
+            //int x = Math.Clamp(maxLoc.X - (kinhThuocCrop / 2), 0, src.Width - kinhThuocCrop);
+            //int y = Math.Clamp(maxLoc.Y - (kinhThuocCrop / 2), 0, src.Height - kinhThuocCrop);
+
+            //Rect cropRoi = new Rect(x, y, kinhThuocCrop, kinhThuocCrop);
+            //using Mat imgSrcRoi = new Mat(src, cropRoi).Clone();
+            //Dbg.Show(imgSrcRoi, "imgSrcRoi");
+
+            // ---- Cho qua model AI cam cheo (thu muc modelAICamCheo) ------------------
+            // QUAN TRONG: model nay duoc train tren ANH GOC NGUYEN CO 1280x1024 (nhan trong
+            // DATA_TRAIN_200822: khung vungMLCC ~172x318 px tren anh goc), nen phai dua ANH GOC
+            // vao, KHONG dua imgSrcRoi 512. Dua crop 512 vao thi con tu chiem gan het khung hinh,
+            // lech han phan bo luc train -> model khong ra khung nao (da thu, count = 0).
+            // Model an 640 nen ben trong AiYoloCamCheo tu letterbox roi tra khung ve DUNG he toa
+            // do anh goc — dung thang de do/ve, khong phai nhan chia lai ti le.
+            // Model 1 lop "vungMLCC"; khong nap duoc model thi tra list rong, pipeline chay tiep.
+            var ketQuaAi = AiYoloCamCheo.Chay(src);
+
+            if (ketQuaAi.Count == 0)
+            {
+                Dbg.Info($"  AI cam cheo: khong co khung nao vuot nguong {AiYoloCamCheo.May.NguongTinCay:0.00}.");
+            }
+            else
+            {
+                foreach (var kq in ketQuaAi) Dbg.Info($"  AI cam cheo: {kq}");
+            }
+
+            // Ve ra xem model nhin thay gi: khung + ten lop + do tin cay + tam khung.
+            using Mat veAiCamCheo = AiYoloCamCheo.Ve(src, ketQuaAi);
+            Dbg.Show(veAiCamCheo, "KetQuaAiCamCheo");
+
+            // ---- Do goc nghieng trong khung AI (dang chay thu) ------------------------
+            // Line doc ao vs truc noi trung tam canh tren - canh duoi cua than tu.
+            // Ghi anh ve ra thu muc GocNghieng de soi tay xem cham canh dung chua.
+            if (ketQuaAi.Count > 0)
+            {
+                Rect yoloBox = ketQuaAi[0].KhungInt;
+                using Mat imgDoGoc = src.Clone();
+                using Mat roiTu = new Mat(imgDoGoc, yoloBox);
+                using Mat gray = new Mat();
+                Cv2.CvtColor(roiTu, gray, ColorConversionCodes.BGR2GRAY);
+
+                Dbg.Show(roiTu, "roiTu");
+                // 2. Lấy đạo hàm theo trục Y (hoặc hướng nghiêng sơ bộ) để bắt ranh giới gốm - thiếc
+                using Mat gradY = new Mat();
+                Cv2.Sobel(gray, gradY, MatType.CV_16S, 0, 1, 3);
+                using Mat absGradY = new Mat();
+                Cv2.ConvertScaleAbs(gradY, absGradY);
+
+                // 3. Lấy các điểm có gradient chuyển tiếp mạnh nhất trên từng cột (1D Peak Detection)
+                List<Point2f> edgePoints = new List<Point2f>();
+                int stepX = 2; // Quét cách 2 pixel một đường để tối ưu Cycle Time
+
+                for (int col = 5; col < absGradY.Cols - 5; col += stepX)
+                {
+                    using Mat colData = absGradY.Col(col);
+                    Cv2.MinMaxLoc(colData, out _, out double maxVal, out _, out Point maxLoc);
+
+                    // Chỉ lấy điểm nếu độ tương phản gradient đủ rõ ràng
+                    if (maxVal > 80)
+                    {
+                        // Tọa độ điểm biên trên ROI gốc
+                        edgePoints.Add(new Point2f(yoloBox.X + col, yoloBox.Y + maxLoc.Y));
+                        Cv2.Circle(imgDoGoc, new Point((int)yoloBox.X + col, (int)yoloBox.Y + maxLoc.Y), 4, Scalar.Red, -1);
+                    }
+                }
+
+                if (edgePoints.Count < 5)
+                {
+                    Dbg.Log("NG");
+                }
+
+                // 4. Khớp đường thẳng ảo (FitLine) qua tập điểm biên bằng thuật toán Least Squares
+                Line2D line = Cv2.FitLine(edgePoints, DistanceTypes.L2, 0, 0.01, 0.01);
+                // 1. Lấy thông số toán học từ FitLine
+                double vx = line.Vx; // hoặc line.Dx
+                double vy = line.Vy; // hoặc line.Dy
+                double x0 = line.X1; // hoặc line.X / line.Pt1.X (điểm đi qua)
+                double y0 = line.Y1; // hoặc line.Y / line.Pt1.Y
+
+                // 2. Kéo dài 2 đầu dựa trên kích thước ảnh để vẽ thành đường thẳng dài
+                double length = Math.Max(imgDoGoc.Cols, imgDoGoc.Rows);
+
+                Point pt1 = new Point((int)(x0 - vx * length), (int)(y0 - vy * length));
+                Point pt2 = new Point((int)(x0 + vx * length), (int)(y0 + vy * length));
+
+                // 3. Render lên ảnh
+                Cv2.Line(imgDoGoc, pt1, pt2, Scalar.Red, 2, LineTypes.AntiAlias);
+                Dbg.Show(imgDoGoc, "imgDoGoc");
+
+
+                // 5. Tính góc của đường thẳng (line.Vx, line.Vy là vector chỉ phương)
+                double angleRad = Math.Atan2(line.Vy, line.Vx);
+                double angleDeg = angleRad * (180.0 / Math.PI);
+                double rawDelta = Math.Abs(angleDeg) - 90.0;
+                double deltaTilt = Math.Abs(rawDelta);
+                float nguongGocNGLimit = 5.0f;
+                bool isNG = deltaTilt > nguongGocNGLimit;
+
+                float cx = yoloBox.X + yoloBox.Width / 2.0f;
+                float cy = yoloBox.Y + yoloBox.Height / 2.0f;
+                double refHalfLength = yoloBox.Height * 0.7;
+
+                Point ptVertTop = new Point((int)cx, (int)(cy - refHalfLength));
+                Point ptVertBottom = new Point((int)cx, (int)(cy + refHalfLength));
+                // Đường xanh lá: Trục thẳng đứng chuẩn (0 độ lệch)
+                Cv2.Line(imgDoGoc, ptVertTop, ptVertBottom, Scalar.LimeGreen, 2, LineTypes.AntiAlias);
+                Cv2.Circle(imgDoGoc, new Point((int)cx, (int)cy), 4, Scalar.Yellow, -1);
+                // Hiển thị text độ lệch góc lên ảnh để theo dõi trên màn hình UI
+                Cv2.PutText(imgDoGoc, $"Tilt: {deltaTilt:F2} deg ({(isNG ? "NG" : "OK")})",
+                            new Point((int)yoloBox.X, (int)yoloBox.Y - 10),
+                            HersheyFonts.HersheySimplex, 0.5,
+                            isNG ? Scalar.Red : Scalar.Green, 1);
+                Dbg.Show(imgDoGoc, "imgDoGoc");
+
+
+                // Chuẩn hóa góc về độ lệch so với phương thẳng đứng hoặc nằm ngang
+                //double deltaAngle = Math.Abs(angleDeg);
+                //if (deltaAngle > 90) deltaAngle = 180 - deltaAngle;
+
+          
+
+                // Tạo tọa độ vẽ Line ảo trực quan hóa
+                Point2f p1 = new Point2f((float)(line.X1 - line.Vx * 50), (float)(line.Y1 - line.Vy * 50));
+                Point2f p2 = new Point2f((float)(line.X1 + line.Vx * 50), (float)(line.Y1 + line.Vy * 50));
+                Point pt3 = new Point((int)Math.Round(p1.X), (int)Math.Round(p1.Y));
+                Point pt4 = new Point((int)Math.Round(p2.X), (int)Math.Round(p2.Y));
+                Cv2.Line(src, pt3, pt4, new Scalar(0, 0, 255), thickness: 2, lineType: LineTypes.AntiAlias);
+                Dbg.Show(imgDoGoc, "imgDoGoc");
+
+
+                //var kqGoc = DoGocNghiengMLCC.Do(src, ketQuaAi[0].KhungInt, out Mat? veGoc);
+                //Dbg.Info($"  Goc nghieng: {kqGoc}");
+                //if (veGoc is not null)
+                //{
+                //    Dbg.Show(veGoc, "GocNghieng");
+                LuuAnhG2(imgDoGoc, _outDirGocNghieng,
+                         $"{nameImgMain}");
+                //    veGoc.Dispose();
+                //}
+            }
+
+            // Cat cua so 512 quanh TAM KHUNG AI (thay cho cach do nang luong Laplacian o tren:
+            // cach cu chi bam vao cho net nhat, gap anh mo la bay ra cho khac han).
+            Mat? roiTheoAi = null;
+            if (ketQuaAi.Count > 0)
+            {
+                var kqTot = ketQuaAi[0];   // da sap theo do tin cay giam dan
+                int xAi = Math.Clamp((int)Math.Round(kqTot.Tam.X) - kinhThuocCrop / 2, 0, Math.Max(0, src.Width - kinhThuocCrop));
+                int yAi = Math.Clamp((int)Math.Round(kqTot.Tam.Y) - kinhThuocCrop / 2, 0, Math.Max(0, src.Height - kinhThuocCrop));
+                int wAi = Math.Min(kinhThuocCrop, src.Width);
+                int hAi = Math.Min(kinhThuocCrop, src.Height);
+
+                Rect roiAi = new Rect(xAi, yAi, wAi, hAi);
+                roiTheoAi = new Mat(src, roiAi).Clone();
+                Dbg.Show(roiTheoAi, "imgSrcRoiTheoAi");
+
+                //Dbg.Info($"  AI cam cheo: cua so 512 theo AI = ({roiAi.X},{roiAi.Y} {roiAi.Width}x{roiAi.Height}), " +
+                //         $"cua so theo Laplacian = ({cropRoi.X},{cropRoi.Y}), " +
+                //         $"lech ({roiAi.X - cropRoi.X},{roiAi.Y - cropRoi.Y}) px");
+
+                LuuAnhG2(roiTheoAi, _outDirAiCamCheo, nameImgMain);
+            }
+            else
+            {
+                LuuAnhG2(veAiCamCheo, _outDirNotFound, nameImgMain);
+            }
+
+
+
+            // TODO (code tiep tu day): tu do nghieng bao nhieu, lech vi tri bao nhieu.
+            // ketQuaAi da sap theo DoTinCay giam dan; cung lay lai duoc qua AiYoloCamCheo.KetQuaGanNhat.
 
             Mat results = new();
-            results = imgSrcRoi.Clone();
+            //results = imgSrcRoi.Clone();
+            // Co khung AI thi coi nhu tim thay vung, tra ve crop theo AI de buoc sau dung tiep.
+            if (roiTheoAi is not null) { results.Dispose(); results = roiTheoAi; }
             if (results is null || results.Empty())
             {
                 Dbg.Info("  Khong do duoc vung nao giam Config.CannyLow or Config.MinAreaRatio.");
-                 LuuAnhG2(src, _outDirNotFound, $"{nameImgMain}");
+                 //LuuAnhG2(results, _outDirNotFound, $"{nameImgMain}");
                 return KetQuaXuLy.KhongThayPhanNho;
             }
             try
             {
-                LuuAnhG2(src, _outDirG2, $"{nameImgMain}");
+                //LuuAnhG2(results, _outDirG2, $"{nameImgMain}");
                 return KetQuaXuLy.ThanhCong;
             }
             finally
             {
+                results.Dispose();
             }
             //ketQua = XuLyMotAnh(inputPath);
         }
