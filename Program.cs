@@ -82,10 +82,10 @@ public static class Config
     public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-36-30.bmp";
 
     
+   // public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\CamChupTrenXuong\\XoayTraiPhai\\NghiengTraiY\\Doc";
+   public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\ChupNghieng\\nghiengLenX\\OK";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\CamChupTrenXuong\\XoayTraiPhai\\NghiengTraiY\\Doc";
-   //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\ChupNghieng\\nghiengLenX\\NG";
-    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh3";
-    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh3";
+    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\CamChupTrenXuong\\XoayTraiPhai\\NghiengTraiY\\Doc";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\TRAIN_AI\\TEST";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\ng";
    // public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\Ng_";
@@ -127,8 +127,8 @@ public static class ProtrusionCfg
 public static class Program
 {
     private static readonly string _outDirG2 = "crop_";
-    private static readonly string _outDirNgang = "Ngang";
-    private static readonly string _outDirDoc = "Doc";
+    private static readonly string _outOK = "OK_";
+    private static readonly string _outNG = "NG_";
 
     private static readonly string _outKhongThayThanTu = "_outKhongThay_ThanTu";
 
@@ -137,7 +137,7 @@ public static class Program
 
     /// <summary>Nơi ghi ảnh đã vẽ kết quả đo góc nghiêng. Tên file bắt đầu bằng góc đo được
     /// nên sắp theo tên là xem được ngay dải góc từ thẳng tới nghiêng nhất.</summary>
-    private static readonly string _outDirGocNghieng = "NghiengPhaiYDoc";
+    private static readonly string _outDirGocNghieng = "NghiengLenXuong_OK";
 
     [ThreadStatic] private static string? _baseName;
     [ThreadStatic] private static int _demAnhG2;
@@ -225,18 +225,18 @@ public static class Program
                 new ParallelOptions { MaxDegreeOfParallelism = soLuong },
                 cv =>
                 {
-                    switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
-                    {
-                        case KetQuaXuLy.ThanhCong: Interlocked.Increment(ref soThanhCong); break;
-                        case KetQuaXuLy.KhongThayPhanNho: Interlocked.Increment(ref soKhongThayPhanNho); break;
-                        default: Interlocked.Increment(ref soLoi); break;
-                    }
-                    //switch (ChayMotViec_AnhNghieng(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                    //switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
                     //{
                     //    case KetQuaXuLy.ThanhCong: Interlocked.Increment(ref soThanhCong); break;
                     //    case KetQuaXuLy.KhongThayPhanNho: Interlocked.Increment(ref soKhongThayPhanNho); break;
                     //    default: Interlocked.Increment(ref soLoi); break;
                     //}
+                    switch (ChayMotViec_AnhNghieng(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                    {
+                        case KetQuaXuLy.ThanhCong: Interlocked.Increment(ref soThanhCong); break;
+                        case KetQuaXuLy.KhongThayPhanNho: Interlocked.Increment(ref soKhongThayPhanNho); break;
+                        default: Interlocked.Increment(ref soLoi); break;
+                    }
                 });
 
             Dbg.SongSong = false;
@@ -557,13 +557,18 @@ public static class Program
                 double angleRad = Math.Atan2(Math.Abs(vx), Math.Abs(vy));
                 double deltaTiltDeg = angleRad * (180.0 / Math.PI);
 
-                bool isNG = deltaTiltDeg > 5.0f;
+                float nguongDoChoPhep = 5.0f;
+                bool isNG = deltaTiltDeg > nguongDoChoPhep;
+                string dauSoSanh = isNG ? ">" : "<=";
 
                 Cv2.Line(imgDoGoc, new Point((int)x0, (int)(y0 - len)),
                                    new Point((int)x0, (int)(y0 + len)),
                                    Scalar.LimeGreen, 1, LineTypes.Link8);
 
-                Cv2.PutText(imgDoGoc, $"Tilt: {deltaTiltDeg:F2} deg ({(isNG ? "NG" : "OK")})",
+                // Format text: Tilt: 9.43 > 5.00 deg (NG) hoặc Tilt: 2.15 <= 5.00 deg (OK)
+                string textTilt = $"Tilt: {deltaTiltDeg:F2} {dauSoSanh} {nguongDoChoPhep:F1} deg ({(isNG ? "NG" : "OK")})";
+
+                Cv2.PutText(imgDoGoc, textTilt,
                             new Point(roiSafe.X, Math.Max(25, roiSafe.Y - 10)),
                             HersheyFonts.HersheySimplex, 0.6,
                             isNG ? Scalar.Red : Scalar.LimeGreen, 2);
@@ -1728,8 +1733,9 @@ public static class Program
         // 1. Kiểm tra điều kiện tiên quyết (SLA Gate)
         bool coMLCC = ketQuaAi.Any(x => x.TenLop.Contains("MLCC", StringComparison.OrdinalIgnoreCase));  
         coMLCC = true;
-        if (ketQuaAi==null || ketQuaAi.Count()<=0 || 
-            ketQuaAi.Any(x => x.TenLop.Contains("NG", StringComparison.OrdinalIgnoreCase)) || !coMLCC)
+        //if (ketQuaAi==null || ketQuaAi.Count()<=0 || 
+        //    ketQuaAi.Any(x => x.TenLop.Contains("NG", StringComparison.OrdinalIgnoreCase)) || !coMLCC)
+        if (ketQuaAi==null || ketQuaAi.Count()<=0 || !coMLCC)
         {
             using Mat veAi_ = vungMLCCMain.Clone();
             Dbg.Info("  AI: [NG] Không có kết quả hoặc thiếu nhãn MLCC.");
@@ -1815,7 +1821,7 @@ public static class Program
                 Dbg.Show(veAi_, "02_KetQua_TongThe");
                 return trueOrFalse;
             }
-            bool kqVung_ = DungHeTrucVaDuongBao_New(veAi_, toaDoList, toaDoMLCC, 10, nameImgMain);
+            bool kqVung_ = DungHeTrucVaDuongBao_New(veAi_, toaDoList, toaDoMLCC, 0, nameImgMain);
             //bool kqVung = DungHeTrucVaDuongBao(veAi_, toaDoList, toaDoMLCC, 30);
             bool kqVung = true;
             if(kqVung_ != null)
@@ -1916,23 +1922,129 @@ public static class Program
         return false;
     }
 
+    /// <summary>Tỉ lệ diện tích box MLCC phải nằm trong khung ROI dựng từ 2 pad đồng thì mới coi là đúng vị trí.</summary>
+    private const double TI_LE_NAM_TRONG_TOI_THIEU = 0.95;
+    private const double TI_LE_NAM_TRONG_TOI_THIEU_GOC = 10;
+
+
+    /// <summary>
+    /// Dựng khung ROI thân tụ từ 2 pad đồng (DetectWhitePads) rồi kiểm tra box MLCC do AI trả về
+    /// có nằm gọn trong khung đó hay không.
+    /// </summary>
     private static bool DungHeTrucVaDuongBao_New(Mat img, List<Point2d> points, AiKetQua kqMLCC, double nguongLechChoPhep = 30, string nameImg="")
     {
         bool isPassViTri = false;
-        bool isVertical = true; 
-        Point2d dirMain, dirSub;
+        if (kqMLCC == null)
+        {
+            Dbg.Info("[VUNG TU] NG - Không có nhãn MLCC để so.");
+            return false;
+        }
+
+        bool isVertical = true;
         Rect vungRoiTu = default;
         if (isVertical)
         {
-            Mat imgTest = img.Clone();
-            Dbg.Show(imgTest, "a");
-            Dbg.Show(img, "a");
+            using Mat imgTest = img.Clone();
             vungRoiTu = DetectWhitePads(imgTest, nameImg);
-            // Tôi muốn kiểm tra xem vùng kqMLCC có nằm trong vùng vungRoiTu hay không
+
+            // Không bắt đủ 2 pad -> không dựng được khung -> không có gì để so, trả NG luôn
+            if (vungRoiTu.Width <= 0 || vungRoiTu.Height <= 0)
+            {
+                Dbg.Info("[VUNG TU] NG - Không dựng được ROI từ 2 pad đồng.");
+                return false;
+            }
+
+            // Nới ROI mỗi phía nguongLechChoPhep px để bù sai số dựng khung từ pad (offset/kích thước đang fix cứng)
+            int noiBien = (int)Math.Round(Math.Max(0, nguongLechChoPhep));
+            Rect roiNoiRong = new Rect(vungRoiTu.X - noiBien,
+                                       vungRoiTu.Y - noiBien,
+                                       vungRoiTu.Width + 2 * noiBien,
+                                       vungRoiTu.Height + 2 * noiBien);
+
+            Rect boxMLCC = kqMLCC.KhungInt;
+
+            // Diện tích phần giao nhau (tự tính, khỏi phụ thuộc overload Intersect của OpenCvSharp)
+            int giaoLeft = Math.Max(boxMLCC.Left, roiNoiRong.Left);
+            int giaoTop = Math.Max(boxMLCC.Top, roiNoiRong.Top);
+            int giaoRight = Math.Min(boxMLCC.Right, roiNoiRong.Right);
+            int giaoBottom = Math.Min(boxMLCC.Bottom, roiNoiRong.Bottom);
+
+            double dienTichGiao = (double)Math.Max(0, giaoRight - giaoLeft) * Math.Max(0, giaoBottom - giaoTop);
+            double dienTichBox = (double)boxMLCC.Width * boxMLCC.Height;
+            double tiLeNamTrong = dienTichBox > 0 ? dienTichGiao / dienTichBox : 0.0;
+
+            // Lệch tâm giữa tâm khung ROI (dựng từ pad) và tâm box MLCC của AI
+            Point2d tamRoi = new Point2d(vungRoiTu.X + vungRoiTu.Width / 2.0,
+                                         vungRoiTu.Y + vungRoiTu.Height / 2.0);
+            double deltaX = kqMLCC.Tam.X - tamRoi.X;
+            double deltaY = kqMLCC.Tam.Y - tamRoi.Y;
+            double doLechTam = Math.Sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            // Hướng lệch, đo từ trục X (+X sang phải = 0 độ, dương = quay xuống dưới vì trục Y ảnh hướng xuống)
+            double gocLech = Math.Atan2(deltaY, deltaX) * 180.0 / Math.PI;
+
+            isPassViTri = tiLeNamTrong >= TI_LE_NAM_TRONG_TOI_THIEU; 
+                       
+            //isPassViTri = tiLeNamTrong >= TI_LE_NAM_TRONG_TOI_THIEU
+            //           && doLechTam < TI_LE_NAM_TRONG_TOI_THIEU_GOC;
+
+            Dbg.Info($"[VUNG TU] ROI pad: {vungRoiTu} (nới {noiBien}px) | Box MLCC: {boxMLCC}");
+            Dbg.Info($"[VUNG TU] Tỉ lệ nằm trong = {tiLeNamTrong:0.000} (ngưỡng {TI_LE_NAM_TRONG_TOI_THIEU:0.000})" +
+                     $" | Lệch tâm = {doLechTam:0.0}/{TI_LE_NAM_TRONG_TOI_THIEU_GOC:0} px, hướng {gocLech:0.0} độ" +
+                     $" -> {(isPassViTri ? "PASS" : "NG - TỤ LỆCH RA NGOÀI KHUNG PAD")}");
+
+            using Mat ve = img.Clone();
+            if (Dbg.Enabled)
+            {
+                Scalar mauKq = isPassViTri ? Scalar.Lime : Scalar.Red;
+                Point pTamRoi = (Point)tamRoi;
+                Point pTamMLCC = new Point((int)kqMLCC.Tam.X, (int)kqMLCC.Tam.Y);
+
+                const double PIXEL_SCALE_MM = 0.00345;
+
+                // 1. Kích thước & text cho Khung gốc (vungRoiTu) - Vẽ ở cạnh TRÊN
+                int wRoiPx = vungRoiTu.Width;
+                int hRoiPx = vungRoiTu.Height;
+                double wRoiMm = wRoiPx * PIXEL_SCALE_MM;
+                double hRoiMm = hRoiPx * PIXEL_SCALE_MM;
+
+                string textRoi = $"ROI: {wRoiPx}x{hRoiPx}px ({wRoiMm:F2}x{hRoiMm:F2}mm)";
+                Point viTriTextRoi = new Point(vungRoiTu.X, Math.Max(15, vungRoiTu.Y - 6));
+                Cv2.PutText(ve, textRoi, viTriTextRoi, HersheyFonts.HersheyPlain, 1, Scalar.Lime, 1, LineTypes.AntiAlias);
+                Cv2.Rectangle(ve, vungRoiTu, Scalar.Lime, 2);
+
+                // 2. Kích thước & text cho Vùng Tụ AI (boxMLCC) - Vẽ ở cạnh DƯỚI để tránh đè chữ
+                int wMlccPx = boxMLCC.Width;
+                int hMlccPx = boxMLCC.Height;
+                double wMlccMm = wMlccPx * PIXEL_SCALE_MM;
+                double hMlccMm = hMlccPx * PIXEL_SCALE_MM;
+
+                string textMLCC = $"MLCC: {wMlccPx}x{hMlccPx}px ({wMlccMm:F2}x{hMlccMm:F2}mm)";
+                Point viTriTextMLCC = new Point(boxMLCC.X, Math.Min(ve.Rows - 5, boxMLCC.Bottom + 14));
+                Cv2.PutText(ve, textMLCC, viTriTextMLCC, HersheyFonts.HersheyPlain, 1, mauKq, 1, LineTypes.AntiAlias);
+                Cv2.Rectangle(ve, boxMLCC, mauKq, 2);
+
+                //Cv2.Rectangle(ve, roiNoiRong, Scalar.DarkCyan, 1);
+                Cv2.DrawMarker(ve, pTamRoi, Scalar.Cyan, MarkerTypes.Cross, 14, 1);
+                Cv2.DrawMarker(ve, pTamMLCC, Scalar.Magenta, MarkerTypes.Cross, 14, 1);
+                Cv2.PutText(ve, $"in={tiLeNamTrong:0.00} lech={doLechTam:0.0}/{TI_LE_NAM_TRONG_TOI_THIEU_GOC:0} goc={gocLech:0.0}",
+                            new Point(5, 18), HersheyFonts.HersheySimplex, 0.5, mauKq, 1);
+
+                Dbg.Show(ve, isPassViTri ? "03_VungTu_OK" : "03_VungTu_NG");
+            }
+            if (isPassViTri)
+            {
+                VeThongBaoNG(ve, "OK", Scalar.Lime);
+                LuuAnhG2(ve, _outOK, $"{nameImg}");
+            }
+            else
+            {
+                VeThongBaoNG(ve, "NG", Scalar.Red);
+                LuuAnhG2(ve, _outNG, $"{nameImg}");
+            }
 
         }
-        int a = 2;
-            
+
         return isPassViTri;
     }
 
@@ -1952,7 +2064,7 @@ public static class Program
         Dbg.Show(binary, "a");
         // 3. Khử nhiễu bằng Morphological Opening (Erode rồi Dilate)
         using Mat kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(10,10));
-        using Mat kernel_2 = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(30, 30));
+        using Mat kernel_2 = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(50, 50));
         using Mat kernel_3 = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(10, 10));
         using Mat cleanBinary = new Mat();
         Cv2.MorphologyEx(binary, cleanBinary, MorphTypes.Close, kernel);
@@ -1970,10 +2082,24 @@ public static class Program
         );
 
         // 5. Lọc Blobs theo diện tích và vị trí bên phải
-        int minArea = 300; // Điều chỉnh tùy theo độ phân giải FOV thực tế
-        int midX = srcBgr.Width / 2;
-
+        int minArea = 50; // Điều chỉnh tùy theo độ phân giải FOV thực tế
+        int midX = cleanBinary.Width / 2;      
+        int margin = 5;
         var validPads = new List<(Point[] Contour, double Area, Rect Box)>();
+
+        //foreach (var contour in contours)
+        //{
+        //    double area = Cv2.ContourArea(contour);
+        //    if (area < minArea) continue;
+
+        //    Rect box = Cv2.BoundingRect(contour);
+
+        //    // 2 đốm pad luôn nằm về phía bên phải so với thân MLCC
+        //    if (box.X > midX)
+        //    {
+        //        validPads.Add((contour, area, box));
+        //    }
+        //}
 
         foreach (var contour in contours)
         {
@@ -1982,11 +2108,22 @@ public static class Program
 
             Rect box = Cv2.BoundingRect(contour);
 
-            // 2 đốm pad luôn nằm về phía bên phải so với thân MLCC
-            if (box.X > midX)
+            // Bỏ qua blob dính mép ảnh (nhiễu biên)
+            //if (box.X <= margin || box.Y <= margin ||
+            //    box.Right >= cleanBinary.Width - margin ||
+            //    box.Bottom >= cleanBinary.Height - margin)
+            //{
+            //    continue;
+            //}
+            if (box.X <= margin || box.Y <= margin )
             {
-                validPads.Add((contour, area, box));
+                continue;
             }
+
+            // Lọc vị trí: Nằm bên phải tâm FOV
+            if (box.X > midX)
+                validPads.Add((contour, area, box));
+            
         }
 
         // 6. Lấy 2 đốm to nhất và sắp xếp từ trên xuống dưới
@@ -1998,7 +2135,30 @@ public static class Program
             .Select(p => p.Box)
             .ToList();
 
-        if(sortedPads.Count>=2)
+        // Vẽ lên ảnh kết quả
+        for (int i = 0; i < sortedPads.Count; i++)
+        {
+            Rect pad = sortedPads[i];
+
+            // Vẽ khung chữ nhật viền xanh lá lá (Thickness: 2)
+            Cv2.Rectangle(cleanBinary, pad, new Scalar(0, 255, 0), 2);
+
+            // Vẽ nhãn định danh (Pad 1: Trên, Pad 2: Dưới)
+            string label = $"Pad {i + 1}";
+            Cv2.PutText(
+                cleanBinary,
+                label,
+                new Point(pad.X, pad.Y - 5),
+                HersheyFonts.HersheySimplex,
+                0.5,
+                new Scalar(0, 0, 255),
+                1
+            );
+            Dbg.Show(cleanBinary, "cleanBinary");
+        }
+        
+
+        if (sortedPads.Count>=2)
         {
             Rect padTop = default;
             Rect padBottom = default;
@@ -2047,9 +2207,9 @@ public static class Program
         string nameImg = null)
     {
         offsetX = -245;
-        offsetY = 45;
-        roiHeight = 200;
-        roiWidth = 120;
+        offsetY = 35;
+        roiHeight = 150;
+        roiWidth = 100;
         // -------------------------------------------------------------
         // BƯỚC 1: Xác định mép trái của 2 Pad và tạo đường Line 1
         // -------------------------------------------------------------
