@@ -82,10 +82,10 @@ public static class Config
     public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-36-30.bmp";
 
     
-    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\CamChupTrenXuong\\XoayTraiPhai\\NghiengTraiY\\Doc";
+    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\CamChupTrenXuong\\XoayTraiPhai\\NghiengTraiY\\Doc";
    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\ChupNghieng\\nghiengLenX\\NG";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh3";
-    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh1";
+    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh3";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\TRAIN_AI\\TEST";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\ng";
    // public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\Ng_";
@@ -1818,6 +1818,11 @@ public static class Program
             bool kqVung_ = DungHeTrucVaDuongBao_New(veAi_, toaDoList, toaDoMLCC, 10, nameImgMain);
             //bool kqVung = DungHeTrucVaDuongBao(veAi_, toaDoList, toaDoMLCC, 30);
             bool kqVung = true;
+            if(kqVung_ != null)
+            {
+
+            }
+                
             
             //if(kqVung)
             //{
@@ -1916,22 +1921,25 @@ public static class Program
         bool isPassViTri = false;
         bool isVertical = true; 
         Point2d dirMain, dirSub;
+        Rect vungRoiTu = default;
         if (isVertical)
         {
             Mat imgTest = img.Clone();
             Dbg.Show(imgTest, "a");
             Dbg.Show(img, "a");
-            DetectWhitePads(imgTest, nameImg);
+            vungRoiTu = DetectWhitePads(imgTest, nameImg);
+            // Tôi muốn kiểm tra xem vùng kqMLCC có nằm trong vùng vungRoiTu hay không
+
         }
         int a = 2;
             
         return isPassViTri;
     }
 
-    public static List<Rect> DetectWhitePads(Mat srcBgr, string nameImg)
+    public static Rect DetectWhitePads(Mat srcBgr, string nameImg)
     {
         Mat srcTest = srcBgr.Clone();
-        var padBoxes = new List<Rect>();
+        Rect roiVungTu  = default;
         // 1. Tách kênh BGR - Kênh Blue ở vị trí index 0
         Mat[] channels = Cv2.Split(srcBgr);
         using Mat blueChannel = channels[0];
@@ -2003,7 +2011,7 @@ public static class Program
             //Point center = new Point(padTop.X + padTop.Width / 2, padTop.Y + padTop.Height / 2);
             //Cv2.Circle(srcBgr, center, 3, new Scalar(0, 255, 0), -1);
 
-            CreateComponentRoi(srcBgr, padTop, padBottom, 10, 10, 80, 40, srcTest, nameImg);
+            roiVungTu = CreateComponentRoi(srcBgr, padTop, padBottom, 10, 10, 80, 40, srcTest, nameImg);
             //foreach (var pad in sortedPads)
             //{   
             //    Cv2.Rectangle(srcBgr, pad, new Scalar(0,0,255), 2);
@@ -2015,7 +2023,7 @@ public static class Program
 
         
 
-        return sortedPads;
+        return roiVungTu;
     }
 
     /// <summary>
