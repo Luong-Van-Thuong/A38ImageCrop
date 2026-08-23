@@ -82,8 +82,8 @@ public static class Config
     public static string InputImagePath = "D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\Image__2026-07-28__09-36-30.bmp";
 
     
-    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\ChupNghieng\\nghiengLenX\\NG";
-    //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\ChupNghieng\\nghiengLenX\\all";
+    public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\CamChupTrenXuong\\XoayTraiPhai\\NghiengTraiY\\Doc";
+   //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\ChupNghieng\\nghiengLenX\\NG";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh3";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\OPENCV\\anh1";
     //public static string InputFolderPath = "D:\\Images_\\JeaYoung\\Coil_Check_Co_Khong_Nghieng\\1CamChieuThang\\Coil\\TRAIN_AI\\TEST";
@@ -130,14 +130,14 @@ public static class Program
     private static readonly string _outDirNgang = "Ngang";
     private static readonly string _outDirDoc = "Doc";
 
-    private static readonly string _outDirNotFound = "AIKhongTimThay_";
+    private static readonly string _outKhongThayThanTu = "_outKhongThay_ThanTu";
 
     /// <summary>Nơi ghi ảnh crop đã vẽ khung của model cam chéo (modelAICamCheo).</summary>
-    private static readonly string _outDirAiCamCheo = "VungMLCC";
+    private static readonly string _outKhongThayVungTu = "_outKhongThay_VungTu";
 
     /// <summary>Nơi ghi ảnh đã vẽ kết quả đo góc nghiêng. Tên file bắt đầu bằng góc đo được
     /// nên sắp theo tên là xem được ngay dải góc từ thẳng tới nghiêng nhất.</summary>
-    private static readonly string _outDirGocNghieng = "GocNghieng_";
+    private static readonly string _outDirGocNghieng = "NghiengPhaiYDoc";
 
     [ThreadStatic] private static string? _baseName;
     [ThreadStatic] private static int _demAnhG2;
@@ -225,18 +225,18 @@ public static class Program
                 new ParallelOptions { MaxDegreeOfParallelism = soLuong },
                 cv =>
                 {
-                    //switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
-                    //{
-                    //    case KetQuaXuLy.ThanhCong: Interlocked.Increment(ref soThanhCong); break;
-                    //    case KetQuaXuLy.KhongThayPhanNho: Interlocked.Increment(ref soKhongThayPhanNho); break;
-                    //    default: Interlocked.Increment(ref soLoi); break;
-                    //}
-                    switch (ChayMotViec_AnhNghieng(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                    switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
                     {
                         case KetQuaXuLy.ThanhCong: Interlocked.Increment(ref soThanhCong); break;
                         case KetQuaXuLy.KhongThayPhanNho: Interlocked.Increment(ref soKhongThayPhanNho); break;
                         default: Interlocked.Increment(ref soLoi); break;
                     }
+                    //switch (ChayMotViec_AnhNghieng(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                    //{
+                    //    case KetQuaXuLy.ThanhCong: Interlocked.Increment(ref soThanhCong); break;
+                    //    case KetQuaXuLy.KhongThayPhanNho: Interlocked.Increment(ref soKhongThayPhanNho); break;
+                    //    default: Interlocked.Increment(ref soLoi); break;
+                    //}
                 });
 
             Dbg.SongSong = false;
@@ -245,18 +245,18 @@ public static class Program
         {
             foreach (var cv in congViec)
             {
-                //switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
-                //{
-                //    case KetQuaXuLy.ThanhCong: soThanhCong++; break;
-                //    case KetQuaXuLy.KhongThayPhanNho: soKhongThayPhanNho++; break;
-                //    default: soLoi++; break;
-                //}
-                switch (ChayMotViec_AnhNghieng(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                switch (ChayMotViec(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
                 {
                     case KetQuaXuLy.ThanhCong: soThanhCong++; break;
                     case KetQuaXuLy.KhongThayPhanNho: soKhongThayPhanNho++; break;
                     default: soLoi++; break;
                 }
+                //switch (ChayMotViec_AnhNghieng(cv.Path, cv.ThuTu, danhSachAnh.Count, chayCaMe))
+                //{
+                //    case KetQuaXuLy.ThanhCong: soThanhCong++; break;
+                //    case KetQuaXuLy.KhongThayPhanNho: soKhongThayPhanNho++; break;
+                //    default: soLoi++; break;
+                //}
             }
         }
 
@@ -330,21 +330,67 @@ public static class Program
 
         return ketQua;
     }
+    private static List<Point2f> LocDiemThangRansac(List<Point2f> points, int maxIterations = 200, double distanceThreshold = 1.2)
+    {
+        if (points == null || points.Count < 5) return points ?? new List<Point2f>();
+
+        Random rand = new Random(42);
+        List<Point2f> bestInliers = new List<Point2f>();
+        int n = points.Count;
+
+        for (int i = 0; i < maxIterations; i++)
+        {
+            int idx1 = rand.Next(n);
+            int idx2 = rand.Next(n);
+            if (idx1 == idx2) continue;
+
+            Point2f p1 = points[idx1];
+            Point2f p2 = points[idx2];
+
+            double dx = p2.X - p1.X;
+            double dy = p2.Y - p1.Y;
+            double lenSq = dx * dx + dy * dy;
+            if (lenSq < 100.0) continue; // Khoảng cách tối thiểu 10px để tránh sai số góc
+
+            // ax + by + c = 0
+            double a = -dy;
+            double b = dx;
+            double c = -(a * p1.X + b * p1.Y);
+            double norm = Math.Sqrt(a * a + b * b);
+            if (norm < 1e-6) continue;
+
+            List<Point2f> currentInliers = new List<Point2f>(n);
+            for (int j = 0; j < n; j++)
+            {
+                Point2f p = points[j];
+                double dist = Math.Abs(a * p.X + b * p.Y + c) / norm;
+                if (dist <= distanceThreshold)
+                {
+                    currentInliers.Add(p);
+                }
+            }
+
+            if (currentInliers.Count > bestInliers.Count)
+            {
+                bestInliers = currentInliers;
+            }
+        }
+
+        return bestInliers.Count >= 6 ? bestInliers : points;
+    }
+
     private static KetQuaXuLy ChayMotViec_AnhNghieng(string inputPath, int thuTu, int tong, bool chayCaMe)
     {
         var tenAnh = Path.GetFileNameWithoutExtension(inputPath);
-
         if (chayCaMe || Config.SaveDebugStepsInBatch) Dbg.BatDauLuong(Path.Combine("debug_out", tenAnh));
 
         Dbg.Info($"===== [{thuTu}/{tong}] {Path.GetFileName(inputPath)} =====");
+        KetQuaXuLy ketQua = KetQuaXuLy.Loi;
 
-        KetQuaXuLy ketQua;
         try
         {
             using var src = Cv2.ImRead(inputPath, ImreadModes.Color);
-            string nameImg = Path.GetFileName(inputPath);
-            string[] nameImgResult = nameImg.Split('.');
-            string nameImgMain = nameImgResult[0];
+            string nameImgMain = Path.GetFileNameWithoutExtension(inputPath);
 
             if (src.Empty())
             {
@@ -352,237 +398,190 @@ public static class Program
                 return KetQuaXuLy.Loi;
             }
 
-            Dbg.Info($"  Anh vao: {src.Width}x{src.Height}");
             Dbg.Reset();
 
-            using Mat grayImg = new();
-            Dbg.Show(src, "a");
-
-            //Cv2.Resize(src, grayImg, new Size(640, 640), interpolation: InterpolationFlags.Linear);
-            //Cv2.CvtColor(src, grayImg, ColorConversionCodes.BGR2GRAY);
-            //Dbg.Show(grayImg, "grayImg");
-
-            //using var laplacianImg = new Mat();
-            //Cv2.Laplacian(grayImg, laplacianImg, MatType.CV_16S, 3);
-            //Dbg.Show(laplacianImg, "laplacianImg");
-
-            //using var absLaplacianImg = new Mat();
-            //Cv2.ConvertScaleAbs(laplacianImg, absLaplacianImg);
-            //Dbg.Show(absLaplacianImg, "absLaplacianImg");
-
-            //using Mat threshLaplacian = new Mat();
-            //Cv2.Threshold(absLaplacianImg, threshLaplacian, 60, 255, ThresholdTypes.Binary);
-            //Dbg.Show(threshLaplacian, "threshLaplacian");
-
-            //using Mat cleanMap = new Mat();
-            //using var kernel_ = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(5, 5));
-            //Cv2.Erode(threshLaplacian, cleanMap, kernel_, iterations: 1);
-            //Cv2.Dilate(cleanMap, cleanMap, kernel_, iterations: 1);
-            //Dbg.Show(cleanMap, "cleanMap");
-
-            //using var energaMap = new Mat();
-            //Cv2.BoxFilter(cleanMap, energaMap, MatType.CV_32F, new Size(15, 15), normalize: false, borderType: BorderTypes.Reflect);
-
-
-            //Cv2.MinMaxLoc(energaMap, out _, out _, out _, out Point maxLoc);
-            int kinhThuocCrop = 640;
-            //int x = Math.Clamp(maxLoc.X - (kinhThuocCrop / 2), 0, src.Width - kinhThuocCrop);
-            //int y = Math.Clamp(maxLoc.Y - (kinhThuocCrop / 2), 0, src.Height - kinhThuocCrop);
-
-            //Rect cropRoi = new Rect(x, y, kinhThuocCrop, kinhThuocCrop);
-            //using Mat imgSrcRoi = new Mat(src, cropRoi).Clone();
-            //Dbg.Show(imgSrcRoi, "imgSrcRoi");
-
-            // ---- Cho qua model AI cam cheo (thu muc modelAICamCheo) ------------------
-            // QUAN TRONG: model nay duoc train tren ANH GOC NGUYEN CO 1280x1024 (nhan trong
-            // DATA_TRAIN_200822: khung vungMLCC ~172x318 px tren anh goc), nen phai dua ANH GOC
-            // vao, KHONG dua imgSrcRoi 512. Dua crop 512 vao thi con tu chiem gan het khung hinh,
-            // lech han phan bo luc train -> model khong ra khung nao (da thu, count = 0).
-            // Model an 640 nen ben trong AiYoloCamCheo tu letterbox roi tra khung ve DUNG he toa
-            // do anh goc — dung thang de do/ve, khong phai nhan chia lai ti le.
-            // Model 1 lop "vungMLCC"; khong nap duoc model thi tra list rong, pipeline chay tiep.
+            // 1. YOLO Cấp 1
             var ketQuaAi = AiYoloCamCheo.Chay(src);
-
             if (ketQuaAi.Count == 0)
             {
-                Dbg.Info($"  AI cam cheo: khong co khung nao vuot nguong {AiYoloCamCheo.May.NguongTinCay:0.00}.");
-            }
-            else
-            {
-                foreach (var kq in ketQuaAi) Dbg.Info($"  AI cam cheo: {kq}");
+                Dbg.Info("  AI cam cheo: khong co khung nao vuot nguong.");
+                LuuAnhG2(src, _outKhongThayVungTu, $"{nameImgMain}");
+                return KetQuaXuLy.Loi;
             }
 
-            // Ve ra xem model nhin thay gi: khung + ten lop + do tin cay + tam khung.
-            using Mat veAiCamCheo = AiYoloCamCheo.Ve(src, ketQuaAi);
-            Dbg.Show(veAiCamCheo, "KetQuaAiCamCheo");
+            Rect yoloBox = ketQuaAi[0].KhungInt;
+            int p1X = Math.Max(0, yoloBox.X);
+            int p1Y = Math.Max(0, yoloBox.Y);
+            int p1W = Math.Min(yoloBox.Width, src.Width - p1X);
+            int p1H = Math.Min(yoloBox.Height, src.Height - p1Y);
+            if (p1W <= 0 || p1H <= 0) return KetQuaXuLy.Loi;
 
-            // ---- Do goc nghieng trong khung AI (dang chay thu) ------------------------
-            // Line doc ao vs truc noi trung tam canh tren - canh duoi cua than tu.
-            // Ghi anh ve ra thu muc GocNghieng de soi tay xem cham canh dung chua.
-            if (ketQuaAi.Count > 0)
+            Rect roiSafe = new Rect(p1X, p1Y, p1W, p1H);
+            using Mat roiTu = new Mat(src, roiSafe);
+
+            // 2. YOLO Cấp 2
+            var ketQuaAiTimTu = AiYolo.Chay(roiTu);
+            if (ketQuaAiTimTu.Count == 0)
             {
-                Rect yoloBox = ketQuaAi[0].KhungInt;
-                using Mat imgDoGoc = src.Clone();
-                using Mat roiTu = new Mat(imgDoGoc, yoloBox);
-                using Mat gray = new Mat();
-                Cv2.CvtColor(roiTu, gray, ColorConversionCodes.BGR2GRAY);
+                Dbg.Info("  AI cap 2 khong tim thay than tu.");
+                LuuAnhG2(roiTu, _outKhongThayThanTu, $"{nameImgMain}");
+                return KetQuaXuLy.Loi;
+            }
 
-                Dbg.Show(roiTu, "roiTu");
-                // 2. Lấy đạo hàm theo trục Y (hoặc hướng nghiêng sơ bộ) để bắt ranh giới gốm - thiếc
-                using Mat gradY = new Mat();
-                Cv2.Sobel(gray, gradY, MatType.CV_16S, 0, 1, 3);
-                using Mat absGradY = new Mat();
-                Cv2.ConvertScaleAbs(gradY, absGradY);
+            Rect yoloBox_ = ketQuaAiTimTu[0].KhungInt;
+            const int pad = 8;
+            int padX = Math.Max(0, yoloBox_.X - pad);
+            int padY = Math.Max(0, yoloBox_.Y - pad);
+            int padR = Math.Min(roiTu.Width, yoloBox_.X + yoloBox_.Width + pad);
+            int padB = Math.Min(roiTu.Height, yoloBox_.Y + yoloBox_.Height + pad);
 
-                // 3. Lấy các điểm có gradient chuyển tiếp mạnh nhất trên từng cột (1D Peak Detection)
-                List<Point2f> edgePoints = new List<Point2f>();
-                int stepX = 2; // Quét cách 2 pixel một đường để tối ưu Cycle Time
+            Rect roiSafe_ = new Rect(padX, padY, padR - padX, padB - padY);
+            if (roiSafe_.Width <= 0 || roiSafe_.Height <= 0) return KetQuaXuLy.Loi;
 
-                for (int col = 5; col < absGradY.Cols - 5; col += stepX)
+            using Mat roiThanTu = new Mat(roiTu, roiSafe_);
+            using Mat imgDoGoc = src.Clone();
+
+            int globalOffsetX = roiSafe.X + roiSafe_.X;
+            int globalOffsetY = roiSafe.Y + roiSafe_.Y;
+
+            // 3. Phân đoạn thân gốm bằng Thresholding để bắt hướng thực tế (0 - 70 deg)
+            using var grayRoi = new Mat();
+            Cv2.CvtColor(roiThanTu, grayRoi, ColorConversionCodes.BGR2GRAY);
+            using var blur = new Mat();
+            Cv2.GaussianBlur(grayRoi, blur, new Size(3, 3), 0);
+
+            using var binMat = new Mat();
+            // Vùng gốm tối màu hơn mối hàn và phản xạ chói
+            Cv2.Threshold(blur, binMat, 0, 255, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
+
+            using var kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(3, 3));
+            using var binClean = new Mat();
+            Cv2.MorphologyEx(binMat, binClean, MorphTypes.Open, kernel);
+            Cv2.MorphologyEx(binClean, binClean, MorphTypes.Close, kernel);
+
+            Cv2.FindContours(binClean, out Point[][] contours, out _, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
+            if (contours.Length == 0)
+            {
+                Dbg.Info("  Khong tim thay contour than tu.");
+                return KetQuaXuLy.Loi;
+            }
+
+            // Lấy contour có diện tích lớn nhất (chính là thân gốm)
+            Point[] maxContour = contours.OrderByDescending(c => Cv2.ContourArea(c)).First();
+            RotatedRect rRect = Cv2.MinAreaRect(maxContour);
+
+            // 4. Quét Gradient Caliper theo pháp tuyến cạnh phải của thân tụ
+            Point2f[] boxPts = rRect.Points();
+            // Sắp xếp các đỉnh để xác định cạnh dọc và cạnh ngang
+            var orderedPts = boxPts.OrderBy(p => p.Y).ToArray();
+            Point2f top1 = orderedPts[0], top2 = orderedPts[1];
+            Point2f bot1 = orderedPts[2], bot2 = orderedPts[3];
+
+            Point2f topEdgeCenter = new Point2f((top1.X + top2.X) * 0.5f, (top1.Y + top2.Y) * 0.5f);
+            Point2f botEdgeCenter = new Point2f((bot1.X + bot2.X) * 0.5f, (bot1.Y + bot2.Y) * 0.5f);
+
+            // Vector trục dọc thân tụ
+            double axisDx = botEdgeCenter.X - topEdgeCenter.X;
+            double axisDy = botEdgeCenter.Y - topEdgeCenter.Y;
+            double axisLen = Math.Sqrt(axisDx * axisDx + axisDy * axisDy);
+            if (axisLen < 1e-3) return KetQuaXuLy.Loi;
+
+            axisDx /= axisLen;
+            axisDy /= axisLen;
+
+            // Vector pháp tuyến hướng sang mép phải
+            double normDx = -axisDy;
+            double normDy = axisDx;
+            if (normDx < 0) { normDx = -normDx; normDy = -normDy; } // Ép hướng sang phải
+
+            // Tính Sobel Gradient để bắt mép chính xác
+            using var gradX = new Mat();
+            using var gradY = new Mat();
+            Cv2.Sobel(blur, gradX, MatType.CV_32F, 1, 0, 3);
+            Cv2.Sobel(blur, gradY, MatType.CV_32F, 0, 1, 3);
+
+            List<Point2f> edgePoints = new List<Point2f>();
+            int numScanlines = 25;
+            double scanRange = Math.Min(roiSafe_.Width, roiSafe_.Height) * 0.45;
+
+            for (int i = 0; i < numScanlines; i++)
+            {
+                // Quét từ 25% đến 75% chiều dài thân tụ (tránh 2 đầu mối hàn)
+                double t = 0.25 + 0.50 * (i / (double)(numScanlines - 1));
+                double centerX = topEdgeCenter.X + t * (botEdgeCenter.X - topEdgeCenter.X);
+                double centerY = topEdgeCenter.Y + t * (botEdgeCenter.Y - topEdgeCenter.Y);
+
+                float maxGrad = 0;
+                Point2f bestPt = new Point2f(-1, -1);
+
+                for (double step = 0; step <= scanRange; step += 0.5)
                 {
-                    using Mat colData = absGradY.Col(col);
-                    Cv2.MinMaxLoc(colData, out _, out double maxVal, out _, out Point maxLoc);
+                    int sx = (int)Math.Round(centerX + step * normDx);
+                    int sy = (int)Math.Round(centerY + step * normDy);
 
-                    // Chỉ lấy điểm nếu độ tương phản gradient đủ rõ ràng
-                    if (maxVal > 80)
+                    if (sx < 1 || sx >= roiThanTu.Cols - 1 || sy < 1 || sy >= roiThanTu.Rows - 1) break;
+
+                    float gx = gradX.At<float>(sy, sx);
+                    float gy = gradY.At<float>(sy, sx);
+                    // Chiếu độ mạnh gradient lên vector pháp tuyến
+                    float projGrad = (float)(gx * normDx + gy * normDy);
+
+                    if (projGrad > maxGrad && projGrad > 30.0f)
                     {
-                        // Tọa độ điểm biên trên ROI gốc
-                        edgePoints.Add(new Point2f(yoloBox.X + col, yoloBox.Y + maxLoc.Y));
-                        Cv2.Circle(imgDoGoc, new Point((int)yoloBox.X + col, (int)yoloBox.Y + maxLoc.Y), 4, Scalar.Red, -1);
+                        maxGrad = projGrad;
+                        bestPt = new Point2f(globalOffsetX + sx, globalOffsetY + sy);
                     }
                 }
 
-                if (edgePoints.Count < 5)
-                {
-                    Dbg.Log("NG");
-                }
-
-                // 4. Khớp đường thẳng ảo (FitLine) qua tập điểm biên bằng thuật toán Least Squares
-                Line2D line = Cv2.FitLine(edgePoints, DistanceTypes.L2, 0, 0.01, 0.01);
-                // 1. Lấy thông số toán học từ FitLine
-                double vx = line.Vx; // hoặc line.Dx
-                double vy = line.Vy; // hoặc line.Dy
-                double x0 = line.X1; // hoặc line.X / line.Pt1.X (điểm đi qua)
-                double y0 = line.Y1; // hoặc line.Y / line.Pt1.Y
-
-                // 2. Kéo dài 2 đầu dựa trên kích thước ảnh để vẽ thành đường thẳng dài
-                double length = Math.Max(imgDoGoc.Cols, imgDoGoc.Rows);
-
-                Point pt1 = new Point((int)(x0 - vx * length), (int)(y0 - vy * length));
-                Point pt2 = new Point((int)(x0 + vx * length), (int)(y0 + vy * length));
-
-                // 3. Render lên ảnh
-                Cv2.Line(imgDoGoc, pt1, pt2, Scalar.Red, 2, LineTypes.AntiAlias);
-                Dbg.Show(imgDoGoc, "imgDoGoc");
-
-
-                // 5. Tính góc của đường thẳng (line.Vx, line.Vy là vector chỉ phương)
-                double angleRad = Math.Atan2(line.Vy, line.Vx);
-                double angleDeg = angleRad * (180.0 / Math.PI);
-                double rawDelta = Math.Abs(angleDeg) - 90.0;
-                double deltaTilt = Math.Abs(rawDelta);
-                float nguongGocNGLimit = 5.0f;
-                bool isNG = deltaTilt > nguongGocNGLimit;
-
-                float cx = yoloBox.X + yoloBox.Width / 2.0f;
-                float cy = yoloBox.Y + yoloBox.Height / 2.0f;
-                double refHalfLength = yoloBox.Height * 0.7;
-
-                Point ptVertTop = new Point((int)cx, (int)(cy - refHalfLength));
-                Point ptVertBottom = new Point((int)cx, (int)(cy + refHalfLength));
-                // Đường xanh lá: Trục thẳng đứng chuẩn (0 độ lệch)
-                Cv2.Line(imgDoGoc, ptVertTop, ptVertBottom, Scalar.LimeGreen, 2, LineTypes.AntiAlias);
-                Cv2.Circle(imgDoGoc, new Point((int)cx, (int)cy), 4, Scalar.Yellow, -1);
-                // Hiển thị text độ lệch góc lên ảnh để theo dõi trên màn hình UI
-                Cv2.PutText(imgDoGoc, $"Tilt: {deltaTilt:F2} deg ({(isNG ? "NG" : "OK")})",
-                            new Point((int)yoloBox.X, (int)yoloBox.Y - 10),
-                            HersheyFonts.HersheySimplex, 0.5,
-                            isNG ? Scalar.Red : Scalar.Green, 1);
-                Dbg.Show(imgDoGoc, "imgDoGoc");
-
-
-                // Chuẩn hóa góc về độ lệch so với phương thẳng đứng hoặc nằm ngang
-                //double deltaAngle = Math.Abs(angleDeg);
-                //if (deltaAngle > 90) deltaAngle = 180 - deltaAngle;
-
-          
-
-                // Tạo tọa độ vẽ Line ảo trực quan hóa
-                Point2f p1 = new Point2f((float)(line.X1 - line.Vx * 50), (float)(line.Y1 - line.Vy * 50));
-                Point2f p2 = new Point2f((float)(line.X1 + line.Vx * 50), (float)(line.Y1 + line.Vy * 50));
-                Point pt3 = new Point((int)Math.Round(p1.X), (int)Math.Round(p1.Y));
-                Point pt4 = new Point((int)Math.Round(p2.X), (int)Math.Round(p2.Y));
-                Cv2.Line(src, pt3, pt4, new Scalar(0, 0, 255), thickness: 2, lineType: LineTypes.AntiAlias);
-                Dbg.Show(imgDoGoc, "imgDoGoc");
-
-
-                //var kqGoc = DoGocNghiengMLCC.Do(src, ketQuaAi[0].KhungInt, out Mat? veGoc);
-                //Dbg.Info($"  Goc nghieng: {kqGoc}");
-                //if (veGoc is not null)
-                //{
-                //    Dbg.Show(veGoc, "GocNghieng");
-                LuuAnhG2(imgDoGoc, _outDirGocNghieng,
-                         $"{nameImgMain}");
-                //    veGoc.Dispose();
-                //}
+                if (bestPt.X > 0) edgePoints.Add(bestPt);
             }
 
-            // Cat cua so 512 quanh TAM KHUNG AI (thay cho cach do nang luong Laplacian o tren:
-            // cach cu chi bam vao cho net nhat, gap anh mo la bay ra cho khac han).
-            Mat? roiTheoAi = null;
-            if (ketQuaAi.Count > 0)
+            // 5. FitLine kết hợp RANSAC chuẩn
+            if (edgePoints.Count >= 8)
             {
-                var kqTot = ketQuaAi[0];   // da sap theo do tin cay giam dan
-                int xAi = Math.Clamp((int)Math.Round(kqTot.Tam.X) - kinhThuocCrop / 2, 0, Math.Max(0, src.Width - kinhThuocCrop));
-                int yAi = Math.Clamp((int)Math.Round(kqTot.Tam.Y) - kinhThuocCrop / 2, 0, Math.Max(0, src.Height - kinhThuocCrop));
-                int wAi = Math.Min(kinhThuocCrop, src.Width);
-                int hAi = Math.Min(kinhThuocCrop, src.Height);
+                List<Point2f> cleanPoints = LocDiemThangRansac(edgePoints, maxIterations: 150, distanceThreshold: 1.2);
+                Line2D line = Cv2.FitLine(cleanPoints, DistanceTypes.Huber, 0, 0.01, 0.01);
 
-                Rect roiAi = new Rect(xAi, yAi, wAi, hAi);
-                roiTheoAi = new Mat(src, roiAi).Clone();
-                Dbg.Show(roiTheoAi, "imgSrcRoiTheoAi");
+                double vx = line.Vx;
+                double vy = line.Vy;
+                double x0 = line.X1;
+                double y0 = line.Y1;
 
-                //Dbg.Info($"  AI cam cheo: cua so 512 theo AI = ({roiAi.X},{roiAi.Y} {roiAi.Width}x{roiAi.Height}), " +
-                //         $"cua so theo Laplacian = ({cropRoi.X},{cropRoi.Y}), " +
-                //         $"lech ({roiAi.X - cropRoi.X},{roiAi.Y - cropRoi.Y}) px");
+                if (vy < 0) { vx = -vx; vy = -vy; }
 
-                LuuAnhG2(roiTheoAi, _outDirAiCamCheo, nameImgMain);
+                double len = Math.Max(roiSafe.Width, roiSafe.Height) * 1.5;
+                Point p1 = new Point((int)(x0 - vx * len), (int)(y0 - vy * len));
+                Point p2 = new Point((int)(x0 + vx * len), (int)(y0 + vy * len));
+                Cv2.Line(imgDoGoc, p1, p2, Scalar.Red, 2, LineTypes.AntiAlias);
+
+                double angleRad = Math.Atan2(Math.Abs(vx), Math.Abs(vy));
+                double deltaTiltDeg = angleRad * (180.0 / Math.PI);
+
+                bool isNG = deltaTiltDeg > 5.0f;
+
+                Cv2.Line(imgDoGoc, new Point((int)x0, (int)(y0 - len)),
+                                   new Point((int)x0, (int)(y0 + len)),
+                                   Scalar.LimeGreen, 1, LineTypes.Link8);
+
+                Cv2.PutText(imgDoGoc, $"Tilt: {deltaTiltDeg:F2} deg ({(isNG ? "NG" : "OK")})",
+                            new Point(roiSafe.X, Math.Max(25, roiSafe.Y - 10)),
+                            HersheyFonts.HersheySimplex, 0.6,
+                            isNG ? Scalar.Red : Scalar.LimeGreen, 2);
+
+                Dbg.Show(imgDoGoc, "KetQuaDoGoc");
+                LuuAnhG2(imgDoGoc, _outDirGocNghieng, $"{nameImgMain}");
+                ketQua = isNG ? KetQuaXuLy.Loi : KetQuaXuLy.ThanhCong;
             }
             else
             {
-                LuuAnhG2(veAiCamCheo, _outDirNotFound, nameImgMain);
+                Dbg.Info("  Khong tim thay du diem canh hop le.");
+                ketQua = KetQuaXuLy.Loi;
             }
-
-
-
-            // TODO (code tiep tu day): tu do nghieng bao nhieu, lech vi tri bao nhieu.
-            // ketQuaAi da sap theo DoTinCay giam dan; cung lay lai duoc qua AiYoloCamCheo.KetQuaGanNhat.
-
-            Mat results = new();
-            //results = imgSrcRoi.Clone();
-            // Co khung AI thi coi nhu tim thay vung, tra ve crop theo AI de buoc sau dung tiep.
-            if (roiTheoAi is not null) { results.Dispose(); results = roiTheoAi; }
-            if (results is null || results.Empty())
-            {
-                Dbg.Info("  Khong do duoc vung nao giam Config.CannyLow or Config.MinAreaRatio.");
-                 //LuuAnhG2(results, _outDirNotFound, $"{nameImgMain}");
-                return KetQuaXuLy.KhongThayPhanNho;
-            }
-            try
-            {
-                //LuuAnhG2(results, _outDirG2, $"{nameImgMain}");
-                return KetQuaXuLy.ThanhCong;
-            }
-            finally
-            {
-                results.Dispose();
-            }
-            //ketQua = XuLyMotAnh(inputPath);
         }
         catch (Exception ex)
         {
             ketQua = KetQuaXuLy.Loi;
-            Dbg.Info($"  Loi khi xu ly{Path.GetFileName(inputPath)}: {ex.Message}");
+            Dbg.Info($"  Loi khi xu ly {Path.GetFileName(inputPath)}: {ex.Message}");
         }
 
         var log = Dbg.KetThucLuong();
@@ -597,6 +596,241 @@ public static class Program
 
         return ketQua;
     }
+    private static KetQuaXuLy ChayMotViec_AnhNghieng_(string inputPath, int thuTu, int tong, bool chayCaMe)
+    {
+        var tenAnh = Path.GetFileNameWithoutExtension(inputPath);
+        if (chayCaMe || Config.SaveDebugStepsInBatch) Dbg.BatDauLuong(Path.Combine("debug_out", tenAnh));
+
+        Dbg.Info($"===== [{thuTu}/{tong}] {Path.GetFileName(inputPath)} =====");
+        KetQuaXuLy ketQua = KetQuaXuLy.Loi;
+
+        try
+        {
+            using var src = Cv2.ImRead(inputPath, ImreadModes.Color);
+            string nameImgMain = Path.GetFileNameWithoutExtension(inputPath);
+
+            if (src.Empty())
+            {
+                Dbg.Info($"  Doc anh that bai: {inputPath}");
+                return KetQuaXuLy.Loi;
+            }
+
+            Dbg.Reset();
+
+            // 1. YOLO cấp 1: Tìm vùng linh kiện
+            var ketQuaAi = AiYoloCamCheo.Chay(src);
+            if (ketQuaAi.Count == 0)
+            {
+                Dbg.Info($"  AI cam cheo: khong co khung nao vuot nguong.");
+                LuuAnhG2(src, _outKhongThayVungTu, $"{nameImgMain}");
+                return KetQuaXuLy.Loi;
+            }
+
+            Rect yoloBox = ketQuaAi[0].KhungInt;
+            int p1X = Math.Max(0, yoloBox.X);
+            int p1Y = Math.Max(0, yoloBox.Y);
+            int p1W = Math.Min(yoloBox.Width, src.Width - p1X);
+            int p1H = Math.Min(yoloBox.Height, src.Height - p1Y);
+
+            if (p1W <= 0 || p1H <= 0) return KetQuaXuLy.Loi;
+            Rect roiSafe = new Rect(p1X, p1Y, p1W, p1H);
+            using Mat roiTu = new Mat(src, roiSafe);
+
+            // 2. YOLO cấp 2: Tìm thân tụ
+            var ketQuaAiTimTu = AiYolo.Chay(roiTu);
+            if (ketQuaAiTimTu.Count == 0)
+            {
+                Dbg.Info("  AI cap 2 khong tim thay than tu.");
+                LuuAnhG2(roiTu, _outKhongThayThanTu, $"{nameImgMain}");
+                return KetQuaXuLy.Loi;
+            }
+
+            Rect yoloBox_ = ketQuaAiTimTu[0].KhungInt;
+            const int pad = 10;
+            int padX = Math.Max(0, yoloBox_.X - pad);
+            int padY = Math.Max(0, yoloBox_.Y - pad);
+            int padR = Math.Min(roiTu.Width, yoloBox_.X + yoloBox_.Width + pad);
+            int padB = Math.Min(roiTu.Height, yoloBox_.Y + yoloBox_.Height + pad);
+
+            Rect roiSafe_ = new Rect(padX, padY, padR - padX, padB - padY);
+            if (roiSafe_.Width <= 0 || roiSafe_.Height <= 0) return KetQuaXuLy.Loi;
+
+            using Mat roiThanTu = new Mat(roiTu, roiSafe_);
+            using Mat imgDoGoc = src.Clone();
+            Dbg.Show(imgDoGoc, "DoGoc");
+
+
+
+            // 3. Tiền xử lý Canny + Morphology Close
+            using var grayRoi = new Mat();
+            Cv2.CvtColor(roiThanTu, grayRoi, ColorConversionCodes.BGR2GRAY);
+            //using var binMat = new Mat();
+            //Cv2.Threshold(grayRoi, binMat, 0, 255, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
+            //Dbg.Show(binMat, "DoGoc");
+
+            using var smooth = new Mat();
+            Cv2.GaussianBlur(grayRoi, smooth, new Size(5, 5), 0);
+
+            using var edges = new Mat();
+            Cv2.Canny(smooth, edges, 50, 100);
+
+
+
+            using var kernelDoc = Cv2.GetStructuringElement(MorphShapes.Rect, new Size(1, 5));
+            using var edgesClosed = new Mat();
+            Cv2.MorphologyEx(edges, edgesClosed, MorphTypes.Close, kernelDoc);
+            Dbg.Show(edgesClosed, "edgesCannyClosed");
+
+
+            using var edges_ = new Mat();
+            Cv2.Canny(smooth, edges_, 200, 255);
+            Dbg.Show(edges_, "edgesCannyClosed");
+            using var edgesClosed_ = new Mat();
+            Cv2.MorphologyEx(edges_, edgesClosed_, MorphTypes.Close, kernelDoc);
+
+            Dbg.Show(edgesClosed_, "edgesCannyClosed");
+            Dbg.Show(edgesClosed, "edgesCannyClosed");
+
+            Cv2.BitwiseAnd(edgesClosed, edgesClosed_, edgesClosed);
+            Dbg.Show(edgesClosed, "edgesCannyClosed");
+
+
+            int globalOffsetX = roiSafe.X + roiSafe_.X;
+            int globalOffsetY = roiSafe.Y + roiSafe_.Y;
+
+            // 4. Quét Scanline Caliper trực tiếp từ tâm ra biên
+            List<Point2f> edgePoints = new List<Point2f>();
+            int startY = (int)(edgesClosed.Rows * 0.3); // Cắt bỏ 35% đỉnh chói
+            int endY = (int)(edgesClosed.Rows * 0.7); // Cắt bỏ 35% mối hàn đáy
+            int xCenter = edgesClosed.Cols / 2;          // Bắt đầu từ trục tâm thân tụ
+            int padding = xCenter / 2;
+            for (int y = startY; y <= endY; y++)
+            {
+                // Quét từ tâm sang phải để bắt chính xác mép gốm đầu tiên
+                for (int x = xCenter; x < edgesClosed.Cols - 1; x++)
+                {
+                    if (edgesClosed.Get<byte>(y, x) > 0)
+                    {
+                        edgePoints.Add(new Point2f(globalOffsetX + x, globalOffsetY + y));
+                        break; // Đã bắt trúng mép thân tụ, không quét ra ngoài nền máy
+                    }
+                }
+            }
+
+            // 5. FitLine kết hợp RANSAC
+            if (edgePoints.Count >= 10)
+            {
+                List<Point2f> cleanPoints = LocDiemThangRansac_(edgePoints, maxIterations: 200, distanceThreshold: 1.0);
+                Line2D line = Cv2.FitLine(cleanPoints, DistanceTypes.Huber, 0, 0.01, 0.01);
+
+                double vx = line.Vx;
+                double vy = line.Vy;
+                double x0 = line.X1;
+                double y0 = line.Y1;
+
+                if (vy < 0) { vx = -vx; vy = -vy; }
+
+                double len = Math.Max(roiSafe.Width, roiSafe.Height) * 1.5;
+                Point p1 = new Point((int)(x0 - vx * len), (int)(y0 - vy * len));
+                Point p2 = new Point((int)(x0 + vx * len), (int)(y0 + vy * len));
+                Cv2.Line(imgDoGoc, p1, p2, Scalar.Red, 2, LineTypes.AntiAlias);
+
+                double angleRad = Math.Atan2(Math.Abs(vx), Math.Abs(vy));
+                double deltaTiltDeg = angleRad * (180.0 / Math.PI);
+
+                bool isNG = deltaTiltDeg > 5.0f;
+
+                Cv2.Line(imgDoGoc, new Point((int)x0, (int)(y0 - len)),
+                                   new Point((int)x0, (int)(y0 + len)),
+                                   Scalar.LimeGreen, 1, LineTypes.Link8);
+
+                Cv2.PutText(imgDoGoc, $"Tilt: {deltaTiltDeg:F2} deg ({(isNG ? "NG" : "OK")})",
+                            new Point(roiSafe.X, Math.Max(25, roiSafe.Y - 10)),
+                            HersheyFonts.HersheySimplex, 0.6,
+                            isNG ? Scalar.Red : Scalar.LimeGreen, 2);
+
+                Dbg.Show(imgDoGoc, "KetQuaDoGoc");
+                LuuAnhG2(imgDoGoc, _outDirGocNghieng, $"{nameImgMain}");
+                ketQua = isNG ? KetQuaXuLy.Loi : KetQuaXuLy.ThanhCong;
+            }
+            else
+            {
+                Dbg.Info("  Khong tim thay du diem canh hop le.");
+                ketQua = KetQuaXuLy.Loi;
+            }
+        }
+        catch (Exception ex)
+        {
+            ketQua = KetQuaXuLy.Loi;
+            Dbg.Info($"  Loi khi xu ly {Path.GetFileName(inputPath)}: {ex.Message}");
+        }
+
+        var log = Dbg.KetThucLuong();
+        if (log.Length > 0)
+        {
+            lock (_khoaConsole)
+            {
+                Console.Write(log);
+                Console.WriteLine();
+            }
+        }
+
+        return ketQua;
+    }
+    private static List<Point2f> LocDiemThangRansac_(List<Point2f> points, int maxIterations = 200, double distanceThreshold = 1.5)
+    {
+        if (points.Count < 5) return points;
+
+        Random rand = new Random();
+        List<Point2f> bestInliers = new List<Point2f>();
+        int n = points.Count;
+
+        for (int i = 0; i < maxIterations; i++)
+        {
+            // 1. Chọn ngẫu nhiên 2 điểm phân biệt
+            int idx1 = rand.Next(n);
+            int idx2 = rand.Next(n);
+            if (idx1 == idx2) continue;
+
+            Point2f p1 = points[idx1];
+            Point2f p2 = points[idx2];
+
+            // Tránh chọn 2 điểm quá sát nhau (dưới 10px) làm sai lệch góc
+            double dy = p2.Y - p1.Y;
+            double dx = p2.X - p1.X;
+            if (Math.Abs(dy) < 10) continue;
+
+            // Phương trình đường thẳng: a*x + b*y + c = 0
+            // Trong đó: a = y1 - y2, b = x2 - x1, c = x1*y2 - x2*y1
+            double a = p1.Y - p2.Y;
+            double b = p2.X - p1.X;
+            double c = p1.X * p2.Y - p2.X * p1.Y;
+            double norm = Math.Sqrt(a * a + b * b);
+            if (norm < 1e-6) continue;
+
+            // 2. Tìm tất cả các điểm nằm sát đường thẳng này (Inliers)
+            List<Point2f> currentInliers = new List<Point2f>();
+            for (int j = 0; j < n; j++)
+            {
+                Point2f p = points[j];
+                double dist = Math.Abs(a * p.X + b * p.Y + c) / norm;
+
+                if (dist <= distanceThreshold) // Chỉ lấy các điểm lệch tối đa 1.5 pixel
+                {
+                    currentInliers.Add(p);
+                }
+            }
+
+            // 3. Giữ lại đường thẳng có số lượng điểm thẳng hàng lớn nhất
+            if (currentInliers.Count > bestInliers.Count)
+            {
+                bestInliers = currentInliers;
+            }
+        }
+
+        return bestInliers.Count >= 10 ? bestInliers : points;
+    }
+ 
 
     private enum KetQuaXuLy
     {

@@ -333,7 +333,7 @@ public sealed class AiYoloMay
 public static class AiYoloCamCheo
 {
     /// <summary>Đổi sang đường dẫn tuyệt đối cũng được, nhưng phải đổi TRƯỚC lần chạy đầu tiên.</summary>
-    public static readonly AiYoloMay May = new("modelAICamCheo");
+    public static readonly AiYoloMay May = new("modelAIVungTu");
 
     /// <summary>
     /// Kết quả lần chạy gần nhất CỦA LUỒNG HIỆN TẠI — tiện lấy ở hàm khác mà không phải truyền

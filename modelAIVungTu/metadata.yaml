@@ -1,6 +1,6 @@
-description: Ultralytics YOLO11n model trained on /mnt/d/Images_/JeaYoung/Coil_Check_Co_Khong_Nghieng/1CamChieuThang/Coil/TRAIN_AI/CHIA_TRAIN_YOLO/DATA_260820/data.yaml
+description: Ultralytics YOLO11n model trained on /mnt/d/Images_/JeaYoung/Coil_Check_Co_Khong_Nghieng/ChupNghieng/nghiengLenX/DATA_TRAIN_200824/data.yaml
 author: Ultralytics
-date: '2026-08-20T10:18:46.872345'
+date: '2026-08-23T16:38:08.165977'
 version: 8.4.38
 license: AGPL-3.0 License (https://ultralytics.com/license)
 docs: https://docs.ultralytics.com
@@ -8,12 +8,10 @@ stride: 32
 task: detect
 batch: 1
 imgsz:
-- 512
-- 512
+- 640
+- 640
 names:
-  0: NG_MLCC
-  1: OK_MLCC
-  2: toaDo
+  0: vungMLCC
 args:
   batch: 1
   fraction: 1.0

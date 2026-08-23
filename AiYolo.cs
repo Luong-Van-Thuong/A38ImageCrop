@@ -45,7 +45,7 @@ public static class AiYolo
     /// Thư mục chứa best.xml/best.bin/metadata.yaml. Đường dẫn tương đối được dò lần lượt ở
     /// thư mục chạy exe rồi ngược lên các thư mục cha (bin\Debug\net8.0 -> gốc project).
     /// </summary>
-    public static string ThuMucModel = "modelAI";
+    public static string ThuMucModel = "modelAIVungThanTu";
 
     /// <summary>Tên file IR trong thư mục trên (đổi tên model thì sửa đúng chỗ này).</summary>
     public static string TenFileIr = "best.xml";
@@ -362,5 +362,28 @@ public static class AiYolo
         _demVaoTheoLuong?.Dispose(); _demVaoTheoLuong = null;
         _model?.Dispose(); _model = null;
         _core?.Dispose(); _core = null;
+    }
+
+    public static Mat Ve(Mat anh, IReadOnlyList<AiKetQua> ketQua)
+    {
+        Mat ve;
+        if (anh.Channels() == 1)
+        {
+            ve = new Mat();
+            Cv2.CvtColor(anh, ve, ColorConversionCodes.GRAY2BGR);
+        }
+        else ve = anh.Clone();
+
+        foreach (var kq in ketQua)
+        {
+            Cv2.Rectangle(ve, kq.KhungInt, Scalar.Lime, 2);
+            Cv2.PutText(ve, $"{kq.TenLop} {kq.DoTinCay:0.00}",
+                        new Point(kq.KhungInt.X, Math.Max(12, kq.KhungInt.Y - 4)),
+                        HersheyFonts.HersheySimplex, 0.5, Scalar.Lime, 1);
+            Cv2.DrawMarker(ve, new Point((int)kq.Tam.X, (int)kq.Tam.Y), Scalar.Magenta,
+                           MarkerTypes.Cross, 15, 2);
+            //Dbg.Show(ve, "ve");
+        }
+        return ve;
     }
 }
