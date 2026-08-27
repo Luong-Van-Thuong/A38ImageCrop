@@ -1,83 +1,76 @@
-# A38.ImageCrop
+# hoc_patModel — tự dựng một CogPMAlign
 
-Console app C# dùng OpenCvSharp4 để dò vùng và cắt ảnh, có sẵn công cụ debug xem ảnh từng bước.
+Branch này chỉ có một mục đích: **học dò mẫu theo hình dạng và tự viết ra một tool
+kiểu `CogPMAlign` của Cognex** — đưa vào ảnh, trả về toạ độ `(x, y)` và góc `θ` của
+con hàng. Mọi thứ không phục vụ mục đích đó đã bị gỡ khỏi branch.
 
-> 📐 **[docs/TU_DUY_MACHINE_VISION.md](docs/TU_DUY_MACHINE_VISION.md)** — phân tích hiện trạng pipeline,
-> phản biện hướng xoay ảnh bằng ApproxPolyDP, và tư duy machine vision cổ điển cho bài toán
-> phát hiện sứt mẻ 1-2mm. Đọc trước khi sửa thuật toán.
+> 📐 **[docs/TU_DUY_MACHINE_VISION.md](docs/TU_DUY_MACHINE_VISION.md)** — tư duy machine
+> vision cổ điển, đọc trước khi sửa thuật toán.
+
+## Bốn file còn lại
+
+| File | Vai trò |
+|---|---|
+| `Program.cs` | Chỉ là bảng điều phối: đọc cờ rồi gọi sang đúng nhánh. Không có pipeline nào ở đây. |
+| `HocDoMau.cs` | Bài học 4 bước, làm dò mẫu bằng tay từ số 0 để hiểu bản chất. |
+| `PatModel.cs` | Trích model thật: kim tự tháp nhiều mức, điểm biên + hướng gradient, có vùng don't-care. |
+| `YeaJoungCheckCoiNghieng.cs` | Dùng model đó dò cả bộ ảnh và trả về góc α — đây là cái gần `CogPMAlign` nhất hiện có. |
+| `Dbg.cs` | Xem ảnh / in số liệu từng bước. Tự thành no-op khi `Dbg.Enabled = false`. |
 
 ## Chạy
 
+**Không nhánh nào nhận đường dẫn ảnh từ dòng lệnh** (trừ `--model`). Đường dẫn, vùng
+khoanh, ngưỡng đều nằm trong class `*Cfg` đầu mỗi file — sửa code rồi `dotnet run` lại.
+
 ```powershell
-cd A38.ImageCrop
-dotnet run                              # chưa có ảnh -> tự tạo sample.png để thử
-dotnet run -- "D:\anh\cccd.jpg"         # chạy trên ảnh của bạn
+dotnet run -- --nghieng                              # do goc alpha ca bo OK/NG  -> nghieng_out\
+dotnet run -- --hoc 1 --no-pause                     # bai hoc buoc 1..4         -> hoc_out\
+dotnet run -- --model --no-window --no-pause         # trich model tu ModelCfg.AnhMaster -> model_out\
+dotnet run -- --model "D:\anh\master.bmp" --no-window --no-pause
+dotnet run -- --model "D:\anh\ca_thu_muc"  --no-window --no-pause
 ```
 
-Mỗi bước sẽ bật một cửa sổ ảnh. Bấm phím bất kỳ để đi tiếp, **Esc / q** để tắt debug và chạy thẳng đến hết.
+Ba cờ nhánh là short-circuit ở đầu `Main`, thứ tự ưu tiên `--model` → `--hoc` → `--nghieng`.
+Truyền hai cờ cùng lúc thì cái đứng trước ăn, cái sau bị bỏ im lặng.
 
-### Các cờ
+### Cờ debug dùng chung
 
 | Cờ | Tác dụng |
 |---|---|
-| `--no-pause` | Không dừng chờ phím, cửa sổ nháy qua nhanh |
-| `--no-window` | Không bật cửa sổ, chỉ in số liệu + ghi ảnh ra `debug_out/` |
-| `--no-debug` | Tắt sạch debug, chạy như chương trình thật |
-| `--only canny` | Chỉ debug bước có tên chứa "canny", các bước khác bỏ qua |
+| `--no-pause` | Không dừng chờ phím |
+| `--no-window` | Không bật cửa sổ, chỉ ghi ảnh ra đĩa |
+| `--no-debug` | Tắt sạch debug |
+| `--only <tên>` | Chỉ debug bước có tên chứa chuỗi này |
 
-Ví dụ chỉ muốn soi bước threshold mà không phải bấm phím 6 lần:
+`--nghieng` không gọi `Dbg` lần nào nên không cần cờ debug. `--model` gọi `Dbg.Show`
+với `pause: true` cho từng mức trong 7 mức, nên gần như luôn muốn `--no-window --no-pause`.
 
-```powershell
-dotnet run -- anh.jpg --only canny
-```
+## Chỗ cần chỉnh của từng nhánh
 
-## Kết quả
+**`--nghieng`** — `YeaJoungCheckCoiNghieng.cs`, class `NghiengCfg`:
 
-- `output/<tên ảnh>_crop.png` — ảnh đã cắt
-- `debug_out/01_original.png`, `02_gray.png`, ... — ảnh từng bước, xem lại bằng File Explorer
+- `AnhMaster` + `VungTu` — **luôn sửa cùng nhau**. `VungTu` là toạ độ tuyệt đối trên
+  đúng ảnh master đó; đổi master mà quên đổi Rect thì model trích ra rác nhưng chương
+  trình vẫn chạy êm và trả α bậy. Mở `nghieng_out\model_L0.png` để bắt sớm.
+- `BoAnh` — danh sách (nhãn, thư mục) để chạy.
+- `NguongAlphaDo` — ngưỡng kết luận NG. `DiemToiThieu` — hạ xuống nếu nhiều ảnh báo `(duoi nguong)`.
 
-## Sửa thuật toán
+**`--hoc`** — `HocDoMau.cs`, class `HocCfg`: `AnhGoc`, `VungKhoanh`, `BanKinhNoi`.
 
-Toàn bộ pipeline nằm trong `CropLargestRegion()` ở `Program.cs`, viết tuần tự từ trên xuống:
-
-```
-original -> gray -> blur -> canny -> morph_close -> findContours -> approxPolyDP -> warp/crop
-```
-
-Tham số nằm ở class `Config` ngay đầu file. Sửa số rồi `dotnet run` lại.
+**`--model`** — `PatModel.cs`, class `ModelCfg`: `VungKhoanh` (`null` = tự lấy theo thân
+vật), `SoMuc`, `KhoangCachDiem`, `SoDiemToiDa`.
 
 ## Đặt debug ở chỗ mới
 
-Ở bất kỳ đâu trong code, gọi:
-
 ```csharp
 Dbg.Show(mat, "tên bước");        // hiện ảnh + in số liệu, dừng chờ phím
-Dbg.Stats(mat, "tên");            // chỉ in số liệu, không hiện ảnh
-Dbg.ShowPair(truoc, sau, "tên");  // 2 ảnh cạnh nhau để so sánh
-Dbg.Log($"biến x = {x}");         // in text
-Dbg.Values(mat, new Rect(100, 100, 10, 10), "vùng nghi ngờ");  // in thẳng giá trị pixel
+Dbg.Stats(mat, "tên");            // chỉ in số liệu
+Dbg.ShowPair(truoc, sau, "tên");  // 2 ảnh cạnh nhau
+Dbg.Log($"biến x = {x}");
+Dbg.Values(mat, new Rect(100, 100, 10, 10), "vùng nghi ngờ");
 ```
 
-Tất cả tự thành no-op khi `Dbg.Enabled = false`, nên **không cần xoá đi khi chạy thật**.
+## Còn thiếu gì so với CogPMAlign
 
-## Đọc số liệu để chỉnh tham số
-
-Dòng stats in ra kiểu:
-
-```
-[canny] 1000x750 CV_8UC1 ch=1 | min=0 max=255 mean=1.16 | nonzero=3413 (0.5%)
-```
-
-`nonzero%` ở bước canny/threshold là chỉ số hữu ích nhất:
-
-- **< 0.5%** — ngưỡng cao quá, cạnh biến mất → giảm `Config.CannyLow`
-- **> 15%** — ngưỡng thấp quá, toàn nhiễu → tăng `Config.CannyLow`, hoặc tăng `Config.BlurKernel`
-
-Không tìm được contour nào thì giảm `Config.MinAreaRatio`.
-Contour bắt đúng vùng nhưng `approxPolyDP` không ra 4 đỉnh thì tăng `Config.ApproxEpsRatio` (0.02 → 0.03).
-
-```
-Phần có thể cái tiến thêm
-chưa cần NCC (TM_CCOEFF_NORMED), distance transform, gradient/Sobel, kim tự tháp, ICP, gradient descent
-Đó là lý do tồn tại của mọi kỹ thuật tăng tốc mà bạn sẽ gặp: kim tự tháp (quét thô trước để khỏi phải quét tinh khắp nơi), tích chập qua FFT, ảnh tích phân.
-```
+Chưa có: độ chính xác dưới pixel (nội suy đỉnh điểm khớp), quét tỉ lệ (scale), nhiều
+kết quả trên một ảnh, và mặt nạ don't-care khai báo được từ ngoài.

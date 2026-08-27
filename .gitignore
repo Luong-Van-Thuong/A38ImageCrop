@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Anh debug/ket qua do ba nhanh --model, --hoc, --nghieng sinh ra
+debug_out/
+hoc_out/
+model_out/
+nghieng_out/

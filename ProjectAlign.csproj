@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -11,15 +11,6 @@
   <ItemGroup>
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.13.0.20260627" />
-    <PackageReference Include="OpenVINO.CSharp.API" Version="2025.4.0" />
-    <PackageReference Include="OpenVINO.runtime.win" Version="2026.1.0" />
-  </ItemGroup>
-
-  <!-- Chép model sang bin de deploy chi viec bung ca thu muc output.
-       Khi chay tu IDE thi AiYolo van tu do nguoc len goc project neu thieu. -->
-  <ItemGroup>
-    <None Include="modelAI\**" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="modelAICamCheo\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
