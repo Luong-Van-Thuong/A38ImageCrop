@@ -196,7 +196,7 @@ public static class PatModel
             if (master.Empty()) { Console.WriteLine($"Doc khong duoc: {path}"); continue; }
 
             var model = TrichModel(master, ModelCfg.VungKhoanh, Path.GetFileNameWithoutExtension(path));
-            InBang(model);
+            //InBang(model);
             VeModel(master, model);
         }
 
@@ -235,6 +235,8 @@ public static class PatModel
         var vung = vungKhoanh ?? Cv2.BoundingRect(than);
         vung = NoiRong(vung, 24, master.Size());
 
+
+
         using var xam = ToXam(master);
         using var xamCat = new Mat(xam, vung);
         using var thanCat = new Mat(than, vung);
@@ -256,6 +258,7 @@ public static class PatModel
 
         return model;
     }
+
 
     private static Size KichThuocMuc(Rect vung, double tiLe) =>
         new(Math.Max(8, (int)Math.Round(vung.Width * tiLe)),
@@ -438,6 +441,7 @@ public static class PatModel
     private static Mat TachThan(Mat src)
     {
         var kenh = Cv2.Split(src);
+        Dbg.Show(src, "src");
         using var min = new Mat();
         Cv2.Min(kenh[0], kenh[1], min);
         Cv2.Min(min, kenh[2], min);
@@ -445,13 +449,13 @@ public static class PatModel
 
         using var bin = new Mat();
         Cv2.Threshold(min, bin, 0, 255, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
-
+        Dbg.Show(bin, "bin");
         Cv2.FindContours(bin, out Point[][] cts, out _,
                          RetrievalModes.External, ContourApproximationModes.ApproxNone);
 
         var than = Mat.Zeros(src.Size(), MatType.CV_8UC1).ToMat();
         if (cts.Length == 0) return than;
-
+        Dbg.Show(than, "than");
         var ngoai = cts.OrderByDescending(c => Cv2.ContourArea(c)).First();
         Cv2.DrawContours(than, new[] { Cv2.ConvexHull(ngoai) }, -1, Scalar.All(255), -1);
         Dbg.Show(than, "Than", true);
@@ -467,6 +471,7 @@ public static class PatModel
     /// </summary>
     private static Mat VungDong(Mat src)
     {
+        Dbg.Show(src, "src");
         var dong = Mat.Zeros(src.Size(), MatType.CV_8UC1).ToMat();
         if (!ModelCfg.DongLaDontCare || src.Channels() < 3) return dong;
 
@@ -474,12 +479,20 @@ public static class PatModel
         using var hieu = new Mat();
         Cv2.Subtract(kenh[2], kenh[0], hieu);            // R - B
         foreach (var c in kenh) c.Dispose();
-
+        Dbg.Show(hieu, "hieu");
         Cv2.Threshold(hieu, dong, ModelCfg.NguongDongRB, 255, ThresholdTypes.Binary);
+        Dbg.Show(hieu, "hieu");
         if (ModelCfg.MoVungDong > 0)
+        {
             Cv2.MorphologyEx(dong, dong, MorphTypes.Open, Dia(ModelCfg.MoVungDong));
+            Dbg.Show(dong, "dong");
+        }
+
         if (ModelCfg.NoiRongDontCare > 0)
+        {
             Cv2.Dilate(dong, dong, Dia(ModelCfg.NoiRongDontCare));
+            Dbg.Show(dong, "dong");
+        }
         return dong;
     }
 

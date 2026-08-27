@@ -34,16 +34,19 @@ public static class Program
         if (args.Contains("--debug-steps")) Config.SaveDebugStepsInBatch = true;
 
         // Buoc 1a cua tool do mau: chi trich model tu anh master roi ve ra, khong chay pipeline cat anh.
-        if (args.Contains("--model"))
-            return PatModel.ChayTrichModel(args);
+        //if (args.Contains("--model"))
+        //    return PatModel.ChayTrichModel(args);
+       PatModel.ChayTrichModel(args);
 
         // Bai hoc do mau ban tho: chay tung buoc mot de hieu shape-based tu goc.
-        if (args.Contains("--hoc"))
-            return HocDoMau.Chay(args);
+        //if (args.Contains("--hoc"))
+        //    return HocDoMau.Chay(args);
+        HocDoMau.Chay(args);
 
         // Bai tu MLCC co nghieng len khong: do goc alpha bang do mau theo hinh dang.
-        if (args.Contains("--nghieng"))
-            return YeaJoungCheckCoiNghieng.Chay(args);
+        //if (args.Contains("--nghieng"))
+        //    return YeaJoungCheckCoiNghieng.Chay(args);
+        YeaJoungCheckCoiNghieng.Chay(args);
 
         InCachDung();
         return 1;
