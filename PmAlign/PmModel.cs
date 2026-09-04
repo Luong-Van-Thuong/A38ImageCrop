@@ -1,0 +1,189 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace A38.ImageCrop.PmAlign;
+
+/// <summary>Model ở một mức kim tự tháp.</summary>
+public sealed class MucPm
+{
+    public int Muc;
+    public double TiLe;
+    public int Rong, Cao;
+    public DiemModel[] Diem = [];
+    public float BanKinh;
+
+    public double NguongThap, NguongCao;
+    public int SoPixelBien, SoUngVien;
+
+    /// <summary>
+    /// ĐÒN BẨY XOAY, pixel dịch chuyển trên mỗi độ xoay. Đóng góp của một điểm là
+    /// |x·gy − y·gx|, nên điểm nằm trên đường tròn (gradient hướng tâm) đóng góp bằng 0
+    /// dù nó ở xa tâm đến đâu — bán kính lớn KHÔNG đồng nghĩa với có đòn bẩy.
+    /// </summary>
+    public double DonBayXoay;
+
+    [JsonIgnore] public bool DungDuoc => Diem.Length > 0 && Rong >= 8 && Cao >= 8;
+
+    /// <summary>Bước góc nên dùng ở mức này: góc làm điểm số dịch đi đúng 1 pixel.</summary>
+    [JsonIgnore] public double BuocGocDo => DonBayXoay < 1e-6 ? 180 : 1.0 / DonBayXoay;
+
+    /// <summary>Đòn bẩy xoay so với bán kính hình học: 1.0 là dùng hết, 0 là vô dụng.</summary>
+    [JsonIgnore] public double TiLeDonBay => BanKinh < 1 ? 0 : DonBayXoay * 180.0 / Math.PI / BanKinh;
+}
+
+/// <summary>
+/// Model đầy đủ — thứ mà nút Train sinh ra và nút Run tiêu thụ.
+///
+/// Điểm được lưu trong HỆ TOẠ ĐỘ MẪU đã dựng thẳng, gốc ở tâm ROI. Góc φ của ROI cất riêng
+/// trong <see cref="Roi"/>. Nhờ đó góc trả về khi Run quy chiếu được về đúng tư thế của vật
+/// trên ẢNH MẪU, thay vì lệch một hằng số theo cách người dùng lỡ xoay ROI.
+/// </summary>
+public sealed class PmModel
+{
+    public string TenAnhMau = "";
+    public RectXoay Roi;
+    public List<RectXoay> Mask = [];
+    public int Rong, Cao;
+    public List<MucPm> Muc = [];
+
+    /// <summary>Góc mà ROI đã bị xoay lúc train — GỐC 0° của model.</summary>
+    [JsonIgnore] public double GocRoiDo => Roi.GocDo;
+
+    [JsonIgnore] public int MucThoNhatDungDuoc
+    {
+        get
+        {
+            for (int i = Muc.Count - 1; i >= 0; i--) if (Muc[i].DungDuoc) return i;
+            return 0;
+        }
+    }
+
+    // ---------------- Lưu / nạp ----------------
+    //
+    // Điểm được dẹp thành mảng float phẳng (x, y, gx, gy, x, y, ...) thay vì mảng struct.
+    // Lý do thực dụng: System.Text.Json không tuần tự hoá field của struct nếu không bật
+    // IncludeFields, mà bật lên thì lại phụ thuộc tên tham số của primary constructor.
+    // Mảng phẳng không có gì để hỏng, và file nhỏ hơn khoảng ba lần.
+
+    private sealed class MucDto
+    {
+        public int Muc { get; set; }
+        public double TiLe { get; set; }
+        public int Rong { get; set; }
+        public int Cao { get; set; }
+        public float BanKinh { get; set; }
+        public double DonBayXoay { get; set; }
+        public double NguongThap { get; set; }
+        public double NguongCao { get; set; }
+        public float[] Diem { get; set; } = [];
+    }
+
+    private sealed class ModelDto
+    {
+        public string TenAnhMau { get; set; } = "";
+        public double[] Roi { get; set; } = [];
+        public List<double[]> Mask { get; set; } = [];
+        public int Rong { get; set; }
+        public int Cao { get; set; }
+        public List<MucDto> Muc { get; set; } = [];
+    }
+
+    private static readonly JsonSerializerOptions JsonOpt = new() { WriteIndented = true };
+
+    private static double[] Dep(RectXoay r) => [r.Cx, r.Cy, r.Rong, r.Cao, r.GocDo];
+    private static RectXoay Bung(double[] a) => new(a[0], a[1], a[2], a[3], a[4]);
+
+    public void Luu(string duongDan)
+    {
+        var dto = new ModelDto
+        {
+            TenAnhMau = TenAnhMau,
+            Roi = Dep(Roi),
+            Mask = Mask.Select(Dep).ToList(),
+            Rong = Rong,
+            Cao = Cao,
+        };
+
+        foreach (var m in Muc)
+        {
+            var phang = new float[m.Diem.Length * 4];
+            for (int i = 0; i < m.Diem.Length; i++)
+            {
+                phang[i * 4 + 0] = m.Diem[i].X;
+                phang[i * 4 + 1] = m.Diem[i].Y;
+                phang[i * 4 + 2] = m.Diem[i].Gx;
+                phang[i * 4 + 3] = m.Diem[i].Gy;
+            }
+            dto.Muc.Add(new MucDto
+            {
+                Muc = m.Muc,
+                TiLe = m.TiLe,
+                Rong = m.Rong,
+                Cao = m.Cao,
+                BanKinh = m.BanKinh,
+                DonBayXoay = m.DonBayXoay,
+                NguongThap = m.NguongThap,
+                NguongCao = m.NguongCao,
+                Diem = phang,
+            });
+        }
+
+        File.WriteAllText(duongDan, JsonSerializer.Serialize(dto, JsonOpt));
+    }
+
+    public static PmModel Nap(string duongDan)
+    {
+        var dto = JsonSerializer.Deserialize<ModelDto>(File.ReadAllText(duongDan))
+                  ?? throw new InvalidDataException($"Khong doc duoc model: {duongDan}");
+
+        var mo = new PmModel
+        {
+            TenAnhMau = dto.TenAnhMau,
+            Roi = dto.Roi.Length == 5 ? Bung(dto.Roi) : new RectXoay(),
+            Mask = dto.Mask.Where(a => a.Length == 5).Select(Bung).ToList(),
+            Rong = dto.Rong,
+            Cao = dto.Cao,
+        };
+
+        foreach (var d in dto.Muc)
+        {
+            int n = d.Diem.Length / 4;
+            var diem = new DiemModel[n];
+            for (int i = 0; i < n; i++)
+                diem[i] = new DiemModel(d.Diem[i * 4], d.Diem[i * 4 + 1], d.Diem[i * 4 + 2], d.Diem[i * 4 + 3]);
+
+            mo.Muc.Add(new MucPm
+            {
+                Muc = d.Muc,
+                TiLe = d.TiLe,
+                Rong = d.Rong,
+                Cao = d.Cao,
+                BanKinh = d.BanKinh,
+                DonBayXoay = d.DonBayXoay,
+                NguongThap = d.NguongThap,
+                NguongCao = d.NguongCao,
+                Diem = diem,
+            });
+        }
+        return mo;
+    }
+}
+
+/// <summary>Một kết quả dò được — tương đương một <c>CogPMAlignResult</c>.</summary>
+public sealed class KetQuaPm
+{
+    /// <summary>Tâm mẫu trên ảnh chạy, đơn vị pixel của ảnh gốc.</summary>
+    public double X, Y;
+
+    /// <summary>Góc của MẪU so với trục ảnh (θ của patch đã dựng thẳng).</summary>
+    public double GocMauDo;
+
+    /// <summary>Góc SO VỚI ẢNH MẪU — con số tương đương Angle của CogPMAlign.</summary>
+    public double GocDo;
+
+    /// <summary>Điểm khớp 0..1, đã trừ nền ngẫu nhiên 2/π.</summary>
+    public double Diem;
+
+    public override string ToString() =>
+        $"x={X,9:F2}  y={Y,9:F2}  goc={GocDo,8:F3}  diem={Diem:F3}";
+}

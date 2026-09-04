@@ -1,14 +1,14 @@
+using System.Windows;
+using A38.ImageCrop.PmAlign;
+
 namespace A38.ImageCrop;
 
 /// <summary>
-/// Cấu hình dùng chung cho cả ba nhánh của branch này.
+/// Cấu hình dùng chung cho các nhánh console của branch này.
 ///
 /// Branch hoc_patModel chỉ còn một mục đích: dựng một tool kiểu CogPMAlign của Cognex —
-/// đưa vào ảnh, trả ra toạ độ (x, y) và góc θ của con hàng. Nên Program.cs ở đây không
-/// còn pipeline nào, nó chỉ là bảng điều phối gọi sang đúng nhánh.
-///
-/// Mọi thứ cần chỉnh (ảnh master, vùng khoanh, ngưỡng) đều nằm trong ModelCfg /
-/// HocCfg / NghiengCfg của từng file, KHÔNG truyền qua dòng lệnh.
+/// đưa vào ảnh, trả ra toạ độ (x, y) và góc θ của con hàng. Program.cs không chứa
+/// pipeline nào, nó chỉ là bảng điều phối gọi sang đúng nhánh.
 /// </summary>
 public static class Config
 {
@@ -21,6 +21,13 @@ public static class Config
 
 public static class Program
 {
+    /// <summary>
+    /// Không có cờ nhánh nào thì mở GIAO DIỆN PmAlign — đây mới là đường chạy chính của
+    /// branch, ba cờ console cũ chỉ còn để chạy lại các bài đo cũ.
+    ///
+    /// [STAThread] là bắt buộc: WPF, hộp thoại mở file và clipboard đều đòi căn hộ đơn luồng.
+    /// </summary>
+    [STAThread]
     public static int Main(string[] args)
     {
         Dbg.Enabled = !args.Contains("--no-debug");
@@ -33,34 +40,49 @@ public static class Program
 
         if (args.Contains("--debug-steps")) Config.SaveDebugStepsInBatch = true;
 
-        // Buoc 1a cua tool do mau: chi trich model tu anh master roi ve ra, khong chay pipeline cat anh.
-        //if (args.Contains("--model"))
-        //    return PatModel.ChayTrichModel(args);
-       PatModel.ChayTrichModel(args);
+        // Bước 1a của tool dò mẫu: chỉ trích model từ ảnh master rồi vẽ ra.
+        if (args.Contains("--model")) return PatModel.ChayTrichModel(args);
 
-        // Bai hoc do mau ban tho: chay tung buoc mot de hieu shape-based tu goc.
-        //if (args.Contains("--hoc"))
-        //    return HocDoMau.Chay(args);
-        HocDoMau.Chay(args);
+        // Bài học dò mẫu bản thô: chạy từng bước một để hiểu shape-based từ gốc.
+        if (args.Contains("--hoc")) return HocDoMau.Chay(args);
 
-        // Bai tu MLCC co nghieng len khong: do goc alpha bang do mau theo hinh dang.
-        //if (args.Contains("--nghieng"))
-        //    return YeaJoungCheckCoiNghieng.Chay(args);
-        YeaJoungCheckCoiNghieng.Chay(args);
+        // Bài từ MLCC có nghiêng lên không: đo góc alpha bằng dò mẫu theo hình dạng.
+        if (args.Contains("--nghieng")) return YeaJoungCheckCoiNghieng.Chay(args);
 
-        InCachDung();
-        return 1;
+        // Tu kiem engine bang chan ly biet truoc: xoay/doi anh mot luong da biet roi bat Run tim lai.
+        if (args.Contains("--tu-kiem")) return PmTuKiem.Chay(args);
+
+        if (args.Contains("--help") || args.Contains("-h")) { InCachDung(); return 0; }
+
+        return MoGiaoDien(args);
+    }
+
+    private static int MoGiaoDien(string[] args)
+    {
+        var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+        var cs = new CuaSoPmAlign();
+
+        // Tham số đầu tiên không phải cờ thì coi là ảnh, mở luôn cho đỡ một lần bấm.
+        var anh = args.FirstOrDefault(a => !a.StartsWith('-') && File.Exists(a));
+        if (anh != null) cs.Loaded += (_, _) => cs.MoAnhTuNgoai(anh);
+
+        app.MainWindow = cs;
+        cs.Show();
+        return app.Run();
     }
 
     private static void InCachDung()
     {
         Console.WriteLine("""
             Branch hoc_patModel — tool do mau theo hinh dang (kieu CogPMAlign).
-            Phai chon mot nhanh:
 
+              (khong co co)         Mo GIAO DIEN PmAlign: mo anh -> khoanh vung tim kiem
+                                    -> khoanh ROI mau va xoay 360 do -> Train -> Run
+              <duong-dan-anh>       Nhu tren, mo san tam anh do
+
+            Ba nhanh console cu:
               --model [duong-dan]   Trich model tu anh master roi ve ra model_out\
-                                    Duong dan la file hoac thu muc; bo trong = ModelCfg.AnhMaster
-              --hoc [1..4]          Bai hoc tung buoc, ket qua ra hoc_out\  (mac dinh buoc 1)
+              --hoc [1..4]          Bai hoc tung buoc, ket qua ra hoc_out\
               --nghieng             Do goc alpha ca bo anh OK/NG, ket qua ra nghieng_out\
 
             Co debug dung chung:

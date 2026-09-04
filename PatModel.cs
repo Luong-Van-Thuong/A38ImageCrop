@@ -229,31 +229,43 @@ public static class PatModel
     /// </summary>
     public static ModelDoMau TrichModel(Mat master, Rect? vungKhoanh, string ten)
     {
+        // Tìm vật thể chính, tách khỏi nền background 
         using var than = TachThan(master);
+
         using var dong = VungDong(master);
 
         var vung = vungKhoanh ?? Cv2.BoundingRect(than);
         vung = NoiRong(vung, 24, master.Size());
 
-
-
+        // Chuyen sang anh mau xam cho anh ban dau
         using var xam = ToXam(master);
         using var xamCat = new Mat(xam, vung);
+        using var imgDebugView = new Mat(xam, vung);
+        Dbg.Show(xamCat, "XamCat");
+        // Crop từ ảnh ban đầu sang vị trí của vật thể sau khi đã bỏ bơt nền
         using var thanCat = new Mat(than, vung);
+        Dbg.Show(thanCat, "ThanCat");
+        // Crop vùng đồng từ ảnh master theo roi của vungdong
         using var dongCat = new Mat(dong, vung);
-
+        Dbg.Show(dongCat, "DongCat");
         var model = new ModelDoMau { TenMaster = ten, VungKhoanh = vung };
         // phần kim tự tháp giảm dần
         for (int muc = 0; muc < ModelCfg.SoMuc; muc++)
         {
+            // lấy tỉ lệ thu nhỏ ảnh
             double tiLe = 1.0 / (1 << muc);
+            // Sử dụng hàm này chánh lỗi và chuẩn hóa số
             var kt = KichThuocMuc(vung, tiLe);
-
+            // Thu nhỏ ảnh
             using var anh = new Mat();
             Cv2.Resize(xamCat, anh, kt, 0, 0, InterpolationFlags.Area);
+            // Kết hợp vùng vật thể và vùng đồng được toàn bộ vùng cần biết 
             using var care = CareChoMuc(thanCat, dongCat, kt);
-
+            // Đầu vào là ảnh với ảnh gốc nhưng đã resize theo tile, vùng chứa vật và đồng, mức kim tự tháp, mức resize
             model.Muc.Add(TrichMotMuc(anh, care, muc, tiLe));
+            var model_ = TrichMotMuc(anh, care, muc, tiLe);
+            using var debugView = Dbg.VisualizModel(anh, model_, 10, true);
+            Dbg.Show(debugView, "debugView");
         }
 
         return model;
@@ -271,11 +283,12 @@ public static class PatModel
     private static Mat CareChoMuc(Mat thanCat, Mat dongCat, Size kt)
     {
         var care = new Mat();
+        // Thu nhỏ vùng chứa vật thể
         Cv2.Resize(thanCat, care, kt, 0, 0, InterpolationFlags.Area);
         Cv2.Threshold(care, care, 127, 255, ThresholdTypes.Binary);
         Cv2.Dilate(care, care, Dia(ModelCfg.NoiRongThanTheoMuc));
         Dbg.Show(care, $"Care {kt.Width}x{kt.Height}", true);
-
+        // Thu nhỏ vùng chứa đồng
         using var dongL = new Mat();
         Cv2.Resize(dongCat, dongL, kt, 0, 0, InterpolationFlags.Area);
         Cv2.Threshold(dongL, dongL, 127, 255, ThresholdTypes.Binary);
@@ -285,6 +298,7 @@ public static class PatModel
             using var khongDong = new Mat();
             Cv2.BitwiseNot(dongL, khongDong);
             Dbg.Show(khongDong, $"Khong dong {kt.Width}x{kt.Height}", true);
+            Dbg.Show(care, $"Care {kt.Width}x{kt.Height}", true);
             Cv2.BitwiseAnd(care, khongDong, care);
             Dbg.Show(care, $"Care - Dong {kt.Width}x{kt.Height}", true);
 
@@ -295,50 +309,44 @@ public static class PatModel
 
     private static MucModel TrichMotMuc(Mat anh, Mat care, int muc, double tiLe)
     {
+
+        Dbg.Show(anh, "anh");
+        Dbg.Show(care, "care");
         int k = ModelCfg.BlurKernel | 1;                   // kernel Gauss bắt buộc lẻ
         using var mo = new Mat();
         Cv2.GaussianBlur(anh, mo, new Size(k, k), 0);
-
+        Dbg.Show(mo, "mo");
+        
+        
         using var dx = new Mat();
         using var dy = new Mat();
-        // Tính toán xem tích vô hướng với mỗi kernel 3*3 của ảnh gốc trả về giá trị ở mỗi pixel như nào 
-        // Tính theo dx
         Cv2.Sobel(mo, dx, MatType.CV_32F, 1, 0, 3);
-        // Tính theo dy
+        Dbg.Show(dx, "dx");
         Cv2.Sobel(mo, dy, MatType.CV_32F, 0, 1, 3);
-        // aCare chuyển ảnh toàn bộ vật màu trắng, phần đồng nhô ra màu đen background màu đen mảng 2D về 1D
+        Dbg.Show(dy, "dy");
+
+        Dbg.Show(dx, "dx");
+        Dbg.Show(dy, "dy");
         care.GetArray(out byte[] aCare);
-        // aDx, aDy chuyển ảnh gradient theo dx, dy về mảng 1D, giá trị của từng pixel là bao nhiêu
         dx.GetArray(out float[] aDx);
         dy.GetArray(out float[] aDy);
-        // Tính ngưỡng Canny từ chính ảnh: hạ dần ngưỡng cho tới khi số pixel gradient mạnh
         var (thap, cao) = NguongTuTinh(aDx, aDy, aCare, anh.Width + anh.Height);
-
-        // Canny chỉ để CHỌN pixel nào là biên (nó đã làm non-max suppression sẵn).
-        // Còn hướng gradient thì lấy từ Sobel, vì Canny không trả ra hướng.
         using var bien = new Mat();
         Cv2.Canny(mo, bien, thap, cao);
         Dbg.Show(bien, $"Bien muc {muc} ti le 1/{1 << muc}", true);
-        // Chuyển đổi ảnh sau Canny sang mảng 1D, giá trị của từng pixel là 0 hoặc 255
         bien.GetArray(out byte[] aBien);
 
         int w = anh.Width, h = anh.Height;
-
-        // Gom ứng viên: là biên, nằm trong vùng quan tâm, và gradient không quá yếu.
         var ungVien = new List<(int Idx, float Mag)>();
-        // Tính khoảng cách của các điểm nếu lớn hơn 0 thì là điểm cần tìm
         for (int idx = 0; idx < aBien.Length; idx++)
         {
             if (aBien[idx] == 0 || aCare[idx] == 0) continue;
             float gx = aDx[idx], gy = aDy[idx];
             float mag = MathF.Sqrt(gx * gx + gy * gy);
+            //float mag = MathF.Abs(gx) + MathF.Abs(gy);
             if (mag < 1e-3f) continue;
             ungVien.Add((idx, mag));
         }
-
-        // Điểm khoẻ được ưu tiên, nhưng mỗi ô lưới chỉ nhận MỘT điểm.
-        // Không làm thế thì một vùng nhiều nhiễu sẽ chiếm hết chỗ và model
-        // mất cân đối — phần lớn điểm dồn vào một góc, đòn bẩy góc coi như mất.
         ungVien.Sort((a, b) => b.Mag.CompareTo(a.Mag));
         // oLuoi = 3
         
@@ -350,11 +358,13 @@ public static class PatModel
         var diem = new List<DiemModel>();
         float banKinh = 0;
         int soDiemMax = (int)Math.Ceiling(Math.Sqrt(w * h / (double)ModelCfg.SoDiemToiDa));
+        // Map từ tọa độ ảnh 2D về mảng 1D xem nhưng giá trị nào thuộc top những điểm tốt nhất với điều kiện chặn là số lượng
+        // Điểm nhỏ hơn soDiemMax 
         foreach (var (idx, mag) in ungVien)
         {
-            // if (diem.Count >= ModelCfg.SoDiemToiDa) break;
             if (diem.Count >= soDiemMax) break;
-
+            // (x,y) (Cột, hàng)
+            // % lấy phần dư, / lấy phần nguyên
             int x = idx % w, y = idx / w;
             int o = (y / oLuoi) * cotLuoi + (x / oLuoi);
             if (daChiem[o]) continue;
@@ -362,17 +372,17 @@ public static class PatModel
 
             float gx = aDx[idx] / mag, gy = aDy[idx] / mag;
             float px = x - cx, py = y - cy;
+            // Tọa độ điểm và vector hướng
             diem.Add(new DiemModel(px, py, gx, gy));
             banKinh = MathF.Max(banKinh, MathF.Sqrt(px * px + py * py));
         }
-
-        // Đòn bẩy xoay: trung bình bình phương của |x·gy - y·gx|, đổi sang pixel trên mỗi độ.
         double tongBinh = 0;
         foreach (var d in diem)
         {
             double don = d.X * d.Gy - d.Y * d.Gx;
             tongBinh += don * don;
         }
+
         double donBay = diem.Count == 0 ? 0 : Math.Sqrt(tongBinh / diem.Count) * Math.PI / 180.0;
 
         return new MucModel
@@ -400,32 +410,42 @@ public static class PatModel
     /// </summary>
     private static (double Thap, double Cao) NguongTuTinh(float[] aDx, float[] aDy, byte[] aCare, int chuVi)
     {
-        const int SoBin = 2048;                      // |gx|+|gy| tối đa của Sobel 3x3 trên ảnh 8-bit
-        var hist = new int[SoBin + 1];
+        const int maxGiaTriNguong = 2048;
+        var hist = new int[maxGiaTriNguong + 1];
         long tong = 0;
 
-        // kiểm tra xem giá trị ở pixel đó thuộc vùng có giá trị bao nhiêu
         for (int i = 0; i < aCare.Length; i++)
         {
-            if (aCare[i] == 0) continue;
+            if (aCare[i] == 0)
+                continue;
+
             int m = (int)(MathF.Abs(aDx[i]) + MathF.Abs(aDy[i]));
-            // Nếu m > SoBin thì tăng giá trị của vị trí SoBin
-            // Nếu m < SoBin thì tăng giá trị của vị trí m
-            hist[m > SoBin ? SoBin : m]++;
+            if (m == 0)
+                continue;
+
+            hist[m > maxGiaTriNguong ? maxGiaTriNguong : m]++;
             tong++;
         }
 
-        // Hạn ngạch theo CHU VI, không theo diện tích — và không bao giờ vượt quá
-        // toàn bộ số pixel quan tâm, để ảnh bé không tụt thẳng xuống sàn.
-        long can = Math.Min((long)(tong * ModelCfg.TiLeBienToiDa), (long)(ModelCfg.HeSoMatDoBien * chuVi));
-        long dem = 0;
-        int muc = SoBin;
-        // Cộng từ trên 2047 xuống đến khi tổng số pixel gradient mạnh đạt hạn ngạch can
-        while (muc > 1 && dem < can) dem += hist[muc--];
+        // 1. Đúng biến: % của diện tích ROI vs Mật độ của Chu vi
+        long soLuongCan = Math.Min(
+            (long)(tong * ModelCfg.TiLeBienToiDa),
+            (long)(chuVi * ModelCfg.HeSoMatDoBien)
+        );
 
-        double cao = Math.Max(ModelCfg.NguongBienToiThieu, muc);
-        // Tìm được giá trị của những phần tử cao nhất
-        return (cao * ModelCfg.CannyTiLeThap, cao);
+        // 2. Quét từ trên xuống
+        long soLuongLay = 0;
+        int muc = maxGiaTriNguong;
+        while (muc > 1 && soLuongLay < soLuongCan)
+        {
+            soLuongLay += hist[muc--];
+        }
+
+        // 3. Khóa trần sàn chống nhiễu hạt (Noise Floor)
+        double cao = Math.Max((double)ModelCfg.NguongBienToiThieu, muc);
+        double thap = cao * ModelCfg.CannyTiLeThap;
+
+        return (thap, cao);
     }
 
     // ---- Vùng quan tâm / don't-care -------------------------------------------
@@ -480,7 +500,7 @@ public static class PatModel
         Cv2.Subtract(kenh[2], kenh[0], hieu);            // R - B
         foreach (var c in kenh) c.Dispose();
         Dbg.Show(hieu, "hieu");
-        Cv2.Threshold(hieu, dong, ModelCfg.NguongDongRB, 255, ThresholdTypes.Binary);
+        Cv2.Threshold(hieu, dong, 100, 255, ThresholdTypes.Binary);
         Dbg.Show(hieu, "hieu");
         if (ModelCfg.MoVungDong > 0)
         {

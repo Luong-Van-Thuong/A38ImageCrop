@@ -1,0 +1,32 @@
+{
+  "//": "Ten profile KHONG duoc bat dau bang '--': dotnet run --launch-profile --x se hieu nham '--x' la mot co cua chinh no, bo qua profile roi chay mac dinh.",
+  "profiles": {
+    "PmAlign (giao dien)": {
+      "commandName": "Project"
+    },
+    "PmAlign + anh 1B": {
+      "commandName": "Project",
+      "commandLineArgs": "\"D:\\Images_\\V2\\CoilAssy\\CoilAssy\\1240S\\opencv\\1B.bmp\""
+    },
+    "tu-kiem": {
+      "commandName": "Project",
+      "commandLineArgs": "--tu-kiem"
+    },
+    "model": {
+      "commandName": "Project",
+      "commandLineArgs": "--model --no-window --no-pause"
+    },
+    "model (co cua so debug)": {
+      "commandName": "Project",
+      "commandLineArgs": "--model"
+    },
+    "hoc buoc 1": {
+      "commandName": "Project",
+      "commandLineArgs": "--hoc 1 --no-pause"
+    },
+    "nghieng": {
+      "commandName": "Project",
+      "commandLineArgs": "--nghieng"
+    }
+  }
+}

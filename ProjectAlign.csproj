@@ -2,11 +2,25 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Giao dien PmAlign viet bang WPF. Van giu OutputType=Exe (khong phai WinExe)
+         de ba nhanh console cu (model / hoc / nghieng) con in ra duoc console. -->
+    <UseWPF>true</UseWPF>
+    <StartupObject>A38.ImageCrop.Program</StartupObject>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Bat UseWPF lam SDK doi bo implicit using: no BO System.IO va THEM System.Windows.Shapes.
+         Hau qua la 'Path' trong ca repo bien thanh System.Windows.Shapes.Path, con File /
+         Directory thi bien mat. Tra lai System.IO va bo Shapes ra khoi global; file giao dien
+         tu khai bao alias cho tung hinh no dung. -->
+    <Using Include="System.IO" />
+    <Using Remove="System.Windows.Shapes" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
