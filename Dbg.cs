@@ -31,6 +31,34 @@ public static class Dbg
 
     public static string OutDir = "debug_out";
 
+    // ---- Duong ra cam duoc (giao dien WPF cam vao day) ----------------------
+    //
+    // Cv2.ImShow + WaitKey chi song duoc tren luong co bom thong diep rieng cua HighGUI.
+    // Giao dien goi Train/Run trong Task.Run nen cua so HighGUI moc ra sau cua so WPF va
+    // WaitKey(0) ngoi cho mot phim khong bao gio den - nhin y het treo. Con SaveFile thi
+    // moi buoc ma hoa mot file PNG, 21 buoc cua mot lan Run het 26 giay.
+    // Cam Sink vao la Show() giao anh thang cho giao dien, khong dung ca hai duong do nua.
+
+    /// <summary>
+    /// Nhan anh cua tung buoc: (anh da chuan hoa ve BGR 8-bit vua man hinh, ten buoc,
+    /// so thu tu, dong so lieu). Dat khac null thi Show() KHONG goi ImShow/WaitKey nua.
+    ///
+    /// Mat truyen vao CHI SONG TRONG LUC GOI - Show() huy no ngay sau do. Ben nhan phai
+    /// chuyen sang dang cua minh (BitmapSource dong bang chang han) ngay trong than ham,
+    /// khong duoc cat lai tham chieu roi dung sau.
+    /// </summary>
+    public static Action<Mat, string, int, string>? Sink;
+
+    /// <summary>Nhan moi dong chu cua Log / Info / Stats, de nhat ky hien ngay trong giao dien.</summary>
+    public static Action<string>? SinkChu;
+
+    /// <summary>
+    /// Chot chan sau moi buoc, thay cho WaitKey - dung cho che do "dung tung buoc".
+    /// Chay tren LUONG XU LY (Task.Run), nen ben dat phai tu lo dong bo.
+    /// Tra ve false nghia la nguoi dung bam "chay thang": Show() tat debug luon.
+    /// </summary>
+    public static Func<bool>? ChoBuoc;
+
     /// <summary>Ảnh to hơn mức này sẽ được thu nhỏ lại khi hiển thị (không ảnh hưởng dữ liệu).</summary>
     public static int MaxDisplaySize = 900;
 
@@ -76,6 +104,7 @@ public static class Dbg
     /// <summary>Mọi dòng chữ đều đi qua đây: song song thì gom vào đệm, không thì in thẳng.</summary>
     private static void Out(string line)
     {
+        SinkChu?.Invoke(line);
         if (SongSong && _demLog is not null) _demLog.AppendLine(line);
         else Console.WriteLine(line);
     }
@@ -115,7 +144,16 @@ public static class Dbg
     public static void Stats(Mat m, string name)
     {
         if (!Enabled || !Match(name)) return;
-        if (m.Empty()) { Out($"  [{name}] Mat RỖNG"); return; }
+        Out(DongStats(m, name));
+    }
+
+    /// <summary>
+    /// Dung dong so lieu cua mot Mat. Tach rieng khoi <see cref="Stats"/> vi giao dien can
+    /// CHUOI de dan lam chu thich cho anh, chu khong phai in ra console.
+    /// </summary>
+    private static string DongStats(Mat m, string name)
+    {
+        if (m.Empty()) return $"  [{name}] Mat RONG";
 
         var line = $"  [{name}] {m.Width}x{m.Height} {m.Type()} ch={m.Channels()}";
 
@@ -137,7 +175,7 @@ public static class Dbg
             line += $" | mean=({mean.Val0:0.#}, {mean.Val1:0.#}, {mean.Val2:0.#})";
         }
 
-        Out(line);
+        return line;
     }
 
     /// <summary>
@@ -150,7 +188,8 @@ public static class Dbg
         if (m.Empty()) { Out($"  [{name}] Mat RỖNG, không hiện được"); return; }
 
         int step = TangStep();
-        Stats(m, name);
+        var soLieu = DongStats(m, name);
+        Out(soLieu);
 
         using var view = ToDisplay(m);
 
@@ -160,6 +199,19 @@ public static class Dbg
             Directory.CreateDirectory(dir);
             var file = Path.Combine(dir, $"{step:00}_{Sanitize(name)}.png");
             Cv2.ImWrite(file, view);
+        }
+
+        // Giao dien da cam Sink thi di duong do: no tu ve trong cua so WPF cua no,
+        // va tu lo chuyen dung tung buoc bang mot cai nut nhin thay duoc.
+        if (Sink is { } guiAnh)
+        {
+            guiAnh(view, name, step, soLieu);
+            if (ChoBuoc is { } cho && !cho())
+            {
+                Enabled = false;
+                Out("     -> Da tat debug, chay den het.");
+            }
+            return;
         }
 
         // Cv2.ImShow/WaitKey chỉ được gọi từ MỘT luồng — bốn luồng cùng mở cửa sổ

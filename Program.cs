@@ -59,12 +59,26 @@ public static class Program
 
     private static int MoGiaoDien(string[] args)
     {
+        // GUI mac dinh TAT debug. Ba nhanh console cu chay mot lan roi thoat nen bat debug
+        // la tien; con GUI thi moi lan bam Run lai di qua ~21 lan Dbg.Show, moi lan ghi mot
+        // file PNG (26 giay cho mot lan Run) roi ket o Cv2.WaitKey(0) trong Task.Run - cua so
+        // HighGUI moc ra sau cua so WPF nen nhin y het treo.
+        //
+        // Muon soi tung buoc thi tick "Debug" tren thanh cong cu: anh hien trong cua so Debug
+        // cua chinh app, co nut "Tiep" thay cho phim bam mu. Co --debug chi la tick san.
+        Dbg.Enabled = false;
+        Dbg.ShowWindow = false;
+        Dbg.SaveFile = false;
+        Dbg.Pause = false;
+
         var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
         var cs = new CuaSoPmAlign();
 
         // Tham số đầu tiên không phải cờ thì coi là ảnh, mở luôn cho đỡ một lần bấm.
         var anh = args.FirstOrDefault(a => !a.StartsWith('-') && File.Exists(a));
         if (anh != null) cs.Loaded += (_, _) => cs.MoAnhTuNgoai(anh);
+
+        if (args.Contains("--debug")) cs.Loaded += (_, _) => cs.BatDebugTuNgoai();
 
         app.MainWindow = cs;
         cs.Show();

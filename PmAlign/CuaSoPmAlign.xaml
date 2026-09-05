@@ -53,6 +53,9 @@
         <Button x:Name="NutTrain"    Content="Train"    Click="Train_Click"    Background="#FF2E7D32" Foreground="White"/>
         <Button x:Name="NutRun"      Content="Run"      Click="Run_Click"      Background="#FF1565C0" Foreground="White"/>
         <Button x:Name="NutXemModel" Content="Xem model" Click="XemModel_Click"/>
+        <CheckBox x:Name="CbDebug" Content="Debug" Margin="8,0,4,0" VerticalAlignment="Center"
+                  Checked="CbDebug_Doi" Unchecked="CbDebug_Doi"
+                  ToolTip="Hien tung buoc bien doi anh trong cua so Debug (khong dung ImShow, khong ghi PNG)."/>
         <Border Width="1" Background="#FF5A5A5A" Margin="6,2"/>
         <Button x:Name="NutLuuModel" Content="Luu model" Click="LuuModel_Click"/>
         <Button x:Name="NutNapModel" Content="Nap model" Click="NapModel_Click"/>
@@ -110,28 +113,48 @@
             <TextBlock Grid.Row="5" Text="Nguong bien toi thieu"/>   <TextBox Grid.Row="5" Grid.Column="1" x:Name="TBienMin"   Style="{StaticResource O}"/>
           </Grid>
 
-          <TextBlock Style="{StaticResource Nhom}" Text="MAT NA TU DONG (rieng bo 1240S)"/>
-          <CheckBox x:Name="CbThan" Content="Chi lay diem tren than vat"/>
-          <CheckBox x:Name="CbDong" Content="Che vung day dong (don-care)"/>
+          <TextBlock Style="{StaticResource Nhom}" Text="MAT NA TU DONG (tuy du an — luon soi bang Debug)"/>
+          <TextBlock Text="Mat na THAN (duoc lay diem)" Margin="0,2,0,0"/>
+          <ComboBox x:Name="CbThan" SelectedIndex="0" ToolTip="Khong = lay ca ROI. Chon kieu theo do tuong phan vat/nen cua du an.">
+            <ComboBoxItem Content="Khong (an toan, mac dinh)"/>
+            <ComboBoxItem Content="Vat TOI tren nen SANG"/>
+            <ComboBoxItem Content="Vat SANG tren nen TOI"/>
+            <ComboBoxItem Content="Toi/nen sang, min 3 kenh (1240S)"/>
+          </ComboBox>
+          <CheckBox x:Name="CbBaoLoi" Content="Bao loi mat na than" Margin="0,4,0,0"
+                    ToolTip="Tat khi vat hinh C / khung rong: bao loi se nuot ca phan rong."/>
+
+          <TextBlock Text="Mat na CHE (don-care)" Margin="0,6,0,0"/>
+          <ComboBox x:Name="CbDong" SelectedIndex="0" ToolTip="Ngoai lua chon nay, cac hinh ve tay LUON duoc dung lam don-care.">
+            <ComboBoxItem Content="Khong (chi hinh ve tay)"/>
+            <ComboBoxItem Content="Vung am do/vang: R − B &gt; nguong"/>
+          </ComboBox>
+
           <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
-            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-            <TextBlock Grid.Row="0" Text="Nguong dong (R − B)"/>     <TextBox Grid.Row="0" Grid.Column="1" x:Name="TDongRB"  Style="{StaticResource O}"/>
-            <TextBlock Grid.Row="1" Text="Mo vung dong (px)"/>       <TextBox Grid.Row="1" Grid.Column="1" x:Name="TMoDong"  Style="{StaticResource O}"/>
+            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Text="Nguong che (R − B)"/>      <TextBox Grid.Row="0" Grid.Column="1" x:Name="TDongRB"  Style="{StaticResource O}"/>
+            <TextBlock Grid.Row="1" Text="Mo vung che (px)"/>        <TextBox Grid.Row="1" Grid.Column="1" x:Name="TMoDong"  Style="{StaticResource O}"/>
             <TextBlock Grid.Row="2" Text="Noi rong vung che (px)"/>  <TextBox Grid.Row="2" Grid.Column="1" x:Name="TNoiChe"  Style="{StaticResource O}"/>
+            <TextBlock Grid.Row="3" Text="Noi rong than (px)"/>      <TextBox Grid.Row="3" Grid.Column="1" x:Name="TNoiThan" Style="{StaticResource O}"/>
+            <TextBlock Grid.Row="4" Text="Noi khung mat na (ti le)"/><TextBox Grid.Row="4" Grid.Column="1" x:Name="TNoiKhung" Style="{StaticResource O}"/>
+            <TextBlock Grid.Row="5" Text="Than toi thieu (ti le)"/>  <TextBox Grid.Row="5" Grid.Column="1" x:Name="TThanMin" Style="{StaticResource O}"/>
           </Grid>
 
           <TextBlock Style="{StaticResource Nhom}" Text="THAM SO RUN"/>
           <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
-              <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+              <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
             </Grid.RowDefinitions>
             <TextBlock Grid.Row="0" Text="Goc quet tu (°)"/>         <TextBox Grid.Row="0" Grid.Column="1" x:Name="TGocTu"    Style="{StaticResource O}"/>
             <TextBlock Grid.Row="1" Text="Goc quet den (°)"/>        <TextBox Grid.Row="1" Grid.Column="1" x:Name="TGocDen"   Style="{StaticResource O}"/>
             <TextBlock Grid.Row="2" Text="So ung vien dinh"/>        <TextBox Grid.Row="2" Grid.Column="1" x:Name="TUngVien"  Style="{StaticResource O}"/>
             <TextBlock Grid.Row="3" Text="Diem toi thieu (0..1)"/>   <TextBox Grid.Row="3" Grid.Column="1" x:Name="TDiemMin"  Style="{StaticResource O}"/>
             <TextBlock Grid.Row="4" Text="So ket qua"/>              <TextBox Grid.Row="4" Grid.Column="1" x:Name="TSoKq"     Style="{StaticResource O}"/>
+            <TextBlock Grid.Row="5" Text="He so san gradient"
+                       ToolTip="Nhan vao nguong Canny ma muc do da dung luc train. 1.0 = chay dung nhu luc train; ha xuong khi lo hang toi/nhoe hon anh mau."/>
+            <TextBox   Grid.Row="5" Grid.Column="1" x:Name="THeSoSan" Style="{StaticResource O}"/>
           </Grid>
           <CheckBox x:Name="CbNoiSuy" Content="Noi suy duoi pixel / duoi buoc goc" IsChecked="True"/>
           <CheckBox x:Name="CbVeDiem" Content="Ve diem model len ket qua" IsChecked="True" Checked="VeLai_Click" Unchecked="VeLai_Click"/>

@@ -1,4 +1,5 @@
 using OpenCvSharp;
+using System.Runtime.InteropServices;
 
 namespace A38.ImageCrop.PmAlign;
 
@@ -46,17 +47,29 @@ public static class PmEngine
         using var xam = ToXam(anhMau);
         using var mauXam = new Mat();
         Cv2.WarpAffine(xam, mauXam, m, kt0, InterpolationFlags.Linear, BorderTypes.Replicate);
+        Dbg.Show(mauXam, "train 1. mau da dung thang");
 
         // --- mặt nạ THÂN (được phép lấy điểm) ---
-        using var thanGoc = cfg.ChiLayTrenThan ? TachThan(anhMau)
-                                               : new Mat(anhMau.Size(), MatType.CV_8UC1, Scalar.All(255));
+        using var thanGoc = TaoMatNaThan(anhMau, roi, cfg, log);
         using var thanMau = new Mat();
         Cv2.WarpAffine(thanGoc, thanMau, m, kt0, InterpolationFlags.Nearest, BorderTypes.Constant, Scalar.All(0));
 
-        // --- mặt nạ CHE (don-care): vùng đồng tự dò + các hình người dùng vẽ ---
-        using var cheGoc = cfg.TuCheVungDong && anhMau.Channels() >= 3
-                           ? VungDong(anhMau, cfg)
-                           : new Mat(anhMau.Size(), MatType.CV_8UC1, Scalar.All(0));
+        // Chốt an toàn: mặt nạ thân ăn gần hết mẫu thì train ra một model vài điểm mà không
+        // ai nhận ra cho tới lúc Run trả rỗng. Thà bỏ mặt nạ và nói to còn hơn.
+        double tiLeThan = Cv2.CountNonZero(thanMau) / (double)(w * h);
+        bool daBoThan = cfg.MatNaThan != KieuThan.Khong && tiLeThan < cfg.ThanToiThieu;
+        if (daBoThan)
+        {
+            log?.Invoke($"CANH BAO: mat na than {cfg.MatNaThan} chi giu {tiLeThan:P1} cua mau " +
+                        $"(< {cfg.ThanToiThieu:P0}) — DA BO mat na than, train tren toan ROI. " +
+                        $"Doi kieu mat na, tat bao loi, hoac dung mask ve tay.");
+            thanMau.SetTo(Scalar.All(255));
+            tiLeThan = 1.0;
+        }
+        Dbg.Show(thanMau, "train 2. mat na than (trang = duoc lay diem)");
+
+        // --- mặt nạ CHE (don-care): vùng tự dò + các hình người dùng vẽ ---
+        using var cheGoc = TaoMatNaChe(anhMau, roi, cfg, log);
         foreach (var mk in dsMask)
         {
             if (!mk.HopLe) continue;
@@ -65,6 +78,15 @@ public static class PmEngine
         }
         using var cheMau = new Mat();
         Cv2.WarpAffine(cheGoc, cheMau, m, kt0, InterpolationFlags.Nearest, BorderTypes.Constant, Scalar.All(0));
+        Dbg.Show(cheMau, "train 3. mat na che (trang = don-care)");
+
+        double tiLeChe = Cv2.CountNonZero(cheMau) / (double)(w * h);
+        log?.Invoke($"Mat na: than {cfg.MatNaThan}{(daBoThan ? " (DA BO)" : "")} giu {tiLeThan:P1}, " +
+                    $"che {cfg.MatNaChe}{(dsMask.Count > 0 ? $" + {dsMask.Count} hinh ve tay" : "")} " +
+                    $"phu {tiLeChe:P1} cua mau.");
+        if (tiLeChe > 0.5)
+            log?.Invoke($"CANH BAO: vung don-care phu {tiLeChe:P0} cua mau — soi anh " +
+                        $"'train 3' xem no co dang an vao canh can train khong.");
 
         var model = new PmModel { Roi = roi, Mask = dsMask, Rong = w, Cao = h };
 
@@ -76,7 +98,7 @@ public static class PmEngine
 
             using var anh = new Mat();
             Cv2.Resize(mauXam, anh, kt, 0, 0, InterpolationFlags.Area);
-            using var care = CareChoMuc(thanMau, cheMau, kt, cfg);
+            using var care = CareChoMuc(thanMau, cheMau, kt, muc, cfg);
 
             var mp = TrichMotMuc(anh, care, muc, tiLe, cfg);
             model.Muc.Add(mp);
@@ -106,23 +128,28 @@ public static class PmEngine
     /// Vùng quan tâm của MỘT mức: thu nhỏ thân và vùng che về kích thước mức đó RỒI MỚI nới,
     /// nên bán kính nới luôn đúng bằng vài pixel ở chính mức đang xét.
     /// </summary>
-    private static Mat CareChoMuc(Mat thanMau, Mat cheMau, Size kt, PmCfg cfg)
+    private static Mat CareChoMuc(Mat thanMau, Mat cheMau, Size kt, int muc, PmCfg cfg)
     {
         var care = new Mat();
         Cv2.Resize(thanMau, care, kt, 0, 0, InterpolationFlags.Area);
         Cv2.Threshold(care, care, 127, 255, ThresholdTypes.Binary);
-        if (cfg.ChiLayTrenThan && cfg.NoiRongThan > 0)
+
+        // Nới thân ra vài px để mặt nạ ôm lấy chính ĐƯỜNG BIÊN của vật. Otsu cắt đúng ở
+        // biên, không nới thì cạnh ngoài cùng — cạnh đáng train nhất — rơi ra ngoài care.
+        if (cfg.MatNaThan != KieuThan.Khong && cfg.NoiRongThan > 0)
             Cv2.Dilate(care, care, Dia(cfg.NoiRongThan));
 
         using var che = new Mat();
         Cv2.Resize(cheMau, che, kt, 0, 0, InterpolationFlags.Area);
         Cv2.Threshold(che, che, 127, 255, ThresholdTypes.Binary);
+
         if (Cv2.CountNonZero(che) > 0)
         {
             using var khong = new Mat();
             Cv2.BitwiseNot(che, khong);
             Cv2.BitwiseAnd(care, khong, care);
         }
+        Dbg.Show(care, $"L{muc} care (than − che)");
         return care;
     }
 
@@ -144,8 +171,9 @@ public static class PmEngine
         var (thap, cao) = NguongTuTinh(aDx, aDy, aCare, anh.Width + anh.Height, cfg);
         using var bien = new Mat();
         Cv2.Canny(mo, bien, thap, cao);
-        bien.GetArray(out byte[] aBien);
+        Dbg.Show(bien, "bien canny");
 
+        bien.GetArray(out byte[] aBien);
         int w = anh.Width, h = anh.Height;
         var ungVien = new List<(int Idx, float Mag)>();
         for (int idx = 0; idx < aBien.Length; idx++)
@@ -266,6 +294,9 @@ public static class PmEngine
     {
         if (model.Muc.Count == 0) return [];
 
+        var dhTong = System.Diagnostics.Stopwatch.StartNew();
+        long mocChuanBi = 0, mocTho = 0;
+
         var vt = vungTim.HopLe
                  ? vungTim
                  : new RectXoay(anh.Width / 2.0, anh.Height / 2.0, anh.Width, anh.Height, 0);
@@ -276,6 +307,7 @@ public static class PmEngine
         if (bao.Width < 8 || bao.Height < 8) return [];
 
         using var xam = ToXam(anh);
+        Dbg.Show(xam, "anh xam");
         using var cat = new Mat(xam, bao);
 
         // Mặt nạ "tâm được phép nằm ở đâu", ở độ phân giải gốc của patch.
@@ -284,7 +316,9 @@ public static class PmEngine
                      .Select(p => new Point((int)Math.Round(p.X - bao.X), (int)Math.Round(p.Y - bao.Y)))
                      .ToArray();
         Cv2.FillConvexPoly(chophep0, dinh, Scalar.All(255));
+        Dbg.Show(chophep0, "chophep0");
 
+      //  Dbg.Show(chophep0, "chophep0");
         // Mức thô nhất dùng được: đủ điểm model VÀ patch còn đủ to để quét.
         int mucTho = 0;
         for (int i = model.Muc.Count - 1; i >= 0; i--)
@@ -297,15 +331,26 @@ public static class PmEngine
         }
 
         var anhMuc = new MucAnh?[model.Muc.Count];
-        MucAnh LayMuc(int i) => anhMuc[i] ??= ChuanBiMucAnh(cat, model.Muc[i].TiLe, cfg);
+        var msMuc = new long[model.Muc.Count];
+        MucAnh LayMuc(int i)
+        {
+            if (anhMuc[i] is { } san) return san;
+            var d = System.Diagnostics.Stopwatch.StartNew();
+            var am = ChuanBiMucAnh(cat, model.Muc[i], cfg);
+            msMuc[i] = d.ElapsedMilliseconds;
+            return anhMuc[i] = am;
+        }
+
+        mocChuanBi = dhTong.ElapsedMilliseconds;
 
         // --- Mức thô: quét toàn vùng cho phép × toàn dải góc ---
         double phi = model.GocRoiDo;
         var mTho = model.Muc[mucTho];
         var aTho = LayMuc(mucTho);
         using var chophepTho = MatNaMuc(chophep0, aTho.W, aTho.H);
-        chophepTho.GetArray(out byte[] aCho);
+        Dbg.Show(chophepTho, "img after mat na muc");
 
+        chophepTho.GetArray(out byte[] aCho);
         double buoc = Math.Clamp(mTho.BuocGocDo, 0.25, 10.0);
         double gTu = phi + Math.Min(cfg.GocTuDo, cfg.GocDenDo);
         double gDen = phi + Math.Max(cfg.GocTuDo, cfg.GocDenDo);
@@ -347,12 +392,15 @@ public static class PmEngine
         // khác nhau, không được coi là một.
         var giu = LocTrung(ungVien.OrderByDescending(u => u.Diem).ToList(), 2.0, buoc * 0.9)
                   .Take(cfg.SoUngVienDinh).ToList();
+        mocTho = dhTong.ElapsedMilliseconds;
         log?.Invoke($"Muc tho L{mucTho}: {aTho.W}x{aTho.H}, {soGoc} goc buoc {buoc:F2}do, " +
-                    $"giu {giu.Count} ung vien, cao nhat {giu[0].Diem:F3}");
+                    $"giu {giu.Count} ung vien, cao nhat {giu[0].Diem:F3} " +
+                    $"[{mocTho - mocChuanBi} ms quet, {msMuc[mucTho]} ms chuan bi muc]");
 
         // --- Xuống dần từng mức, mỗi mức chỉ tinh chỉnh quanh ứng viên ---
         for (int muc = mucTho - 1; muc >= 0; muc--)
         {
+            var dhMuc = System.Diagnostics.Stopwatch.StartNew();
             var mCon = model.Muc[muc];
             var aCon = LayMuc(muc);
             double buocCon = Math.Clamp(mCon.BuocGocDo, 0.05, 10.0);
@@ -380,6 +428,9 @@ public static class PmEngine
             buoc = buocCon;
             giu = LocTrung(moi.OrderByDescending(u => u.Diem).ToList(), 4.0, Math.Max(1.0, buocCon))
                   .Take(Math.Max(3, cfg.SoUngVienDinh >> (mucTho - muc))).ToList();
+            log?.Invoke($"  Tinh chinh L{muc}: {aCon.W}x{aCon.H}, {mCon.Diem.Length} diem, " +
+                        $"{giu.Count} ung vien, cao nhat {giu[0].Diem:F3} " +
+                        $"[{dhMuc.ElapsedMilliseconds} ms, trong do {msMuc[muc]} ms chuan bi muc]");
         }
 
         // --- Nội suy dưới pixel / dưới bước góc ở mức mịn nhất ---
@@ -418,6 +469,11 @@ public static class PmEngine
         var loc = LocTrung(ra.OrderByDescending(k => k.Diem)
                              .Select(k => (k.Diem, k.X, k.Y, k.GocMauDo)).ToList(),
                            Math.Max(2.0, model.Muc[0].BanKinh * 0.3), 0);
+
+        log?.Invoke($"Tong {dhTong.ElapsedMilliseconds} ms " +
+                    $"(chuan bi {mocChuanBi} ms, muc tho {mocTho - mocChuanBi} ms, " +
+                    $"tinh chinh + noi suy {dhTong.ElapsedMilliseconds - mocTho} ms) " +
+                    $"tren patch {bao.Width}x{bao.Height} (le {le} px theo ban kinh model).");
 
         return loc.Take(Math.Max(1, cfg.SoKetQua))
                   .Select(u => ra.First(k => k.X == u.X && k.Y == u.Y && k.GocMauDo == u.Goc))
@@ -534,20 +590,54 @@ public static class PmEngine
         return Math.Max(0, (tong / diem.Length - NgauNhien) / (1 - NgauNhien));
     }
 
-    private static MucAnh ChuanBiMucAnh(Mat xam, double tiLe, PmCfg cfg)
+    /// <summary>
+    /// Dung truong huong gradient cua anh chay o mot muc — thu ma <see cref="Cham"/> doc.
+    ///
+    /// SAN LAY TU MODEL, khong lay tu anh chay. Ban cu dat san bang phan vi 0.85 cua chinh
+    /// khung tim kiem: luon giu dung 15% pixel manh nhat, bat ke anh nao. Do la mot HAN NGACH
+    /// chu khong phai mot nguong, va no hong o muc tho — o L5 con hang chi chiem 2,5% khung
+    /// (22x29 trong 158x158) va canh cua no da bi thu nho 32 lan lam nhoe, nen no thua suat
+    /// truoc nen va moi thu khac trong tam anh 5064². Do duoc tren bo cnc2_: san hien tai
+    /// 176..231 trong khi luc train chi lay tu 93.2 — siet gap 2..2,5 lan so voi luc chon diem.
+    /// Hau qua: dat model vao DUNG cho dung, chi 27/59 diem roi vao pixel con song, va vi
+    /// <see cref="Cham"/> tru di muc ngau nhien 2/pi ~ 0.637 nen 27/59 = 0.458 ra diem DUNG
+    /// BANG 0 — muc tho mu hoan toan, Run tra ve rong.
+    ///
+    /// Con mot hong nua: han ngach doi theo khung, nen khoanh vung tim kiem HEP LAI (tuc la
+    /// cho tool them thong tin) lai lam san tang tu 176 len 211 va hong nang hon.
+    ///
+    /// <see cref="MucPm.NguongThap"/> da duoc tinh luc train va da luu trong .pmm.json, chi la
+    /// truoc day khong ai doc. Dung no thi train va run cung mot tieu chi, va san het phu thuoc
+    /// vao viec nguoi dung khoanh vung to hay nho.
+    /// </summary>
+    private static MucAnh ChuanBiMucAnh(Mat xam, MucPm mm, PmCfg cfg)
     {
+        int muc = mm.Muc;
+        double tiLe = mm.TiLe;
         var kt = new Size(Math.Max(8, (int)Math.Round(xam.Width * tiLe)),
                           Math.Max(8, (int)Math.Round(xam.Height * tiLe)));
         using var anh = new Mat();
         Cv2.Resize(xam, anh, kt, 0, 0, InterpolationFlags.Area);
+        Dbg.Show(anh, $"L{muc} 1. thu nho 1/{1 << muc}");
 
         int k = Math.Max(1, cfg.BlurKernel) | 1;
         using var mo = new Mat();
         Cv2.GaussianBlur(anh, mo, new Size(k, k), 0);
+        Dbg.Show(mo, $"L{muc} 2. lam mo k={k}");
+
         using var dx = new Mat();
         using var dy = new Mat();
         Cv2.Sobel(mo, dx, MatType.CV_32F, 1, 0, 3);
         Cv2.Sobel(mo, dy, MatType.CV_32F, 0, 1, 3);
+
+        // Ban cu hien lai chinh 'mo' o day nen ket qua Sobel chua bao gio nhin thay duoc.
+        // Do lon gradient moi la thu can soi: no cho biet muc nay con canh nao du manh.
+        if (Dbg.Enabled)
+        {
+            using var doLon = new Mat();
+            Cv2.Magnitude(dx, dy, doLon);
+            Dbg.Show(doLon, $"L{muc} 3. do lon gradient (Sobel)");
+        }
 
         dx.GetArray(out float[] gxs);
         dy.GetArray(out float[] gys);
@@ -555,34 +645,75 @@ public static class PmEngine
         int n = kt.Width * kt.Height;
         var am = new MucAnh { W = kt.Width, H = kt.Height, Ngx = new float[n], Ngy = new float[n] };
 
-        // Sàn cho độ lớn gradient, lấy theo PHÂN VỊ của chính ảnh đó.
+        // Sàn = đúng ngưỡng thấp mà Canny đã dùng lúc train mức này, nhân hệ số tinh chỉnh.
+        // Lấy ngưỡng THẤP chứ không phải ngưỡng cao: điểm model sinh ra từ Canny có trễ, một
+        // điểm hợp lệ chỉ cần mạnh tới ngưỡng thấp là đủ, đòi nó đạt ngưỡng cao là loại oan.
         //
-        // Lấy sàn theo trung bình là sai: nền phẳng chiếm gần hết khung nên trung bình tụt
-        // rất thấp, gần như mọi pixel lọt qua. Chuẩn hoá một gradient nhiễu lên độ dài 1 là
-        // bơm một hướng ngẫu nhiên vào điểm số, mà nền ngẫu nhiên đã ăn sẵn 2/π ≈ 0.64.
+        // Model cũ chưa có trường này thì NguongThap = 0, khi đó rơi về NguongBienToiThieu —
+        // rộng rãi nhưng không chết, hơn hẳn việc siết mù như hạn ngạch phân vị cũ.
+        double san = Math.Max(cfg.NguongBienToiThieu, mm.NguongThap * cfg.HeSoSanChay);
+
+        // So bằng chuẩn L1 |gx|+|gy|, ĐÚNG như NguongTuTinh lúc train (nó dùng L1 cho khớp
+        // với Canny khi L2gradient = false). Bản cũ so ngưỡng đó với chuẩn L2 √(gx²+gy²);
+        // L1 nằm giữa L2 và √2·L2 nên chỗ đó tự siết thêm 10..27% mà không ai cố ý.
+        // Chuẩn hoá thì vẫn phải chia cho L2, vì hướng cần là vector đơn vị thật.
         //
-        // Đếm bằng histogram thay vì Array.Sort: bản cũ ở YeaJoung sort nguyên mảng n phần
-        // tử mỗi mức, với ảnh L0 vài triệu pixel thì riêng chỗ đó đã hết ngân sách 250ms.
-        const int nbin = 2048;
-        var hist = new int[nbin + 1];
-        var manh = new float[n];
+        // Bỏ luôn histogram và mảng manh[]: ở L0 của ảnh 5064² đó là một lượt quét thừa và
+        // 102 MB cấp phát thừa cho mỗi mức.
         for (int o = 0; o < n; o++)
         {
-            float g = MathF.Sqrt(gxs[o] * gxs[o] + gys[o] * gys[o]);
-            manh[o] = g;
-            int b = (int)g;
-            hist[b > nbin ? nbin : b]++;
+            float gx = gxs[o], gy = gys[o];
+            if (MathF.Abs(gx) + MathF.Abs(gy) < san) continue;
+            float d = MathF.Sqrt(gx * gx + gy * gy);
+            if (d < 1e-6f) continue;
+            am.Ngx[o] = gx / d;
+            am.Ngy[o] = gy / d;
         }
-        long moc = (long)(n * 0.85);
-        long acc = 0;
-        int bin = 0;
-        while (bin < nbin && acc + hist[bin] < moc) { acc += hist[bin]; bin++; }
-        double san = Math.Max(4.0, bin);
 
-        for (int o = 0; o < n; o++)
-            if (manh[o] >= san) { am.Ngx[o] = gxs[o] / manh[o]; am.Ngy[o] = gys[o] / manh[o]; }
+        if (Dbg.Enabled)
+        {
+            using var huong = VeHuongGradient(am);
+            Dbg.Show(huong, $"L{muc} 4. huong gradient sau san (san={san:F0}, giu {TyLeGiu(am):P1})");
+        }
 
         return am;
+    }
+
+    /// <summary>
+    /// Ve DUNG thu ma <see cref="Cham"/> doc: truong huong gradient sau khi da cat san.
+    /// Den = pixel bi san loai, tuc la voi bo cham diem no khong ton tai. Nhin anh nay la
+    /// biet muc do con giu duoc duong vien nao, hay san da an sach mat canh can tim.
+    ///
+    /// Mau ma hoa huong bang chinh (gx, gy) chu khong qua atan2: mot luot nhan, khong luong
+    /// giac. O muc L0 vai trieu pixel thi rieng atan2 da du lam nguoi ta ngo la treo.
+    /// </summary>
+    private static Mat VeHuongGradient(MucAnh am)
+    {
+        var buf = new byte[am.W * am.H * 3];
+        for (int o = 0; o < am.Ngx.Length; o++)
+        {
+            float gx = am.Ngx[o], gy = am.Ngy[o];
+            if (gx == 0 && gy == 0) continue;                 // bi san loai -> de den
+            buf[o * 3 + 0] = 40;                              // B: nen mo de thay pixel con song
+            buf[o * 3 + 1] = (byte)(127 + 127 * gy);          // G theo thanh phan doc
+            buf[o * 3 + 2] = (byte)(127 + 127 * gx);          // R theo thanh phan ngang
+        }
+
+        // Do thang byte[] vao bo nho Mat. KHONG dung Mat.SetArray o day: no doi kieu phan tu
+        // khop voi MatType, dua byte[] vao CV_8UC3 la nem "Mat data type is not compatible".
+        // Mat vua cap phat luon lien tuc nen Marshal.Copy mot phat la du.
+        var ra = new Mat(am.H, am.W, MatType.CV_8UC3);
+        Marshal.Copy(buf, 0, ra.Data, buf.Length);
+        return ra;
+    }
+
+    /// <summary>Ti le pixel song sot qua san - do thang cua nguong phan vi 0.85.</summary>
+    private static double TyLeGiu(MucAnh am)
+    {
+        int song = 0;
+        for (int o = 0; o < am.Ngx.Length; o++)
+            if (am.Ngx[o] != 0 || am.Ngy[o] != 0) song++;
+        return am.Ngx.Length == 0 ? 0 : (double)song / am.Ngx.Length;
     }
 
     private static Mat MatNaMuc(Mat mask0, int w, int h)
@@ -619,55 +750,146 @@ public static class PmEngine
     }
 
     // ==========================================================================
-    //  Mặt nạ tự động (chỉ đúng cho bộ ảnh 1240S — nền backlight trắng, vật có dây đồng)
+    //  Mặt nạ tự động
     // ==========================================================================
+    //
+    // Hai điều đã đo trên D:\images_ (6 dự án) và quyết định hình dạng của mục này:
+    //
+    //  1. KHÔNG có một công thức nào đúng cho mọi dự án. Cùng "min(B,G,R) + Otsu + bao lồi"
+    //     cho ra: 52% trên V2/1240S (đúng), 14.77% trên SIBV/A26 (bao lồi chỉ ôm cái hốc
+    //     giữa, cả khung ngoài — nơi có toàn bộ cạnh đáng train — nằm ngoài mặt nạ),
+    //     72.8% trên SmartTech/TCut (bao lồi cắt chéo mất góc trên-phải), 96.5–100% trên
+    //     Aline/Almus_ (mặt nạ vô nghĩa). Vì vậy kiểu mặt nạ là một LỰA CHỌN của người dùng,
+    //     mặc định Khong, chứ không phải một cái công tắc bật/tắt "chế độ thông minh".
+    //
+    //  2. Mặt nạ phải tính TRONG KHUNG ROI, không phải toàn ảnh. Bản cũ chạy Otsu +
+    //     "blob lớn nhất" trên cả tấm 5064²: blob lớn nhất ở đó là vùng nền tối ngoài vòng
+    //     đèn hoặc một con hàng khác, chứ không phải con hàng mà người dùng vừa khoanh.
+    //     Tính trong khung ROI nới NoiKhungMatNa còn nhanh hơn hàng chục lần: Cv2.Split
+    //     một tấm 5064×5064 là ba lần cấp phát 25 MB cho mỗi lần bấm Train.
 
     /// <summary>
-    /// Thân vật: min(B,G,R) + Otsu + blob lớn nhất + bao lồi.
-    /// Dùng min ba kênh chứ không dùng ảnh xám, vì dây đồng cháy sáng ngang với nền
-    /// backlight trên ảnh xám — Otsu trên ảnh xám ăn mất nguyên một cạnh dài.
+    /// Khung tính mặt nạ: hộp bao của ROI nới thêm theo tỉ lệ cạnh, cắt trong ảnh.
+    /// Phải có ít NỀN trong khung thì Otsu mới có hai đỉnh để tách — ROI khít quá thì
+    /// Otsu quay ra cắt đôi chính vật.
     /// </summary>
-    private static Mat TachThan(Mat src)
+    private static Rect KhungMatNa(RectXoay roi, Size khung, PmCfg cfg)
+    {
+        int pad = (int)Math.Ceiling(Math.Max(roi.Rong, roi.Cao) * Math.Max(0, cfg.NoiKhungMatNa));
+        return NoiRong(roi.BaoNgoai(), pad, khung);
+    }
+
+    /// <summary>
+    /// Mặt nạ THÂN trên hệ toạ độ ẢNH GỐC — trắng ở nơi được phép sinh điểm model.
+    /// Ngoài khung ROI luôn là 0; phần đó dù sao cũng bị warp cắt bỏ.
+    /// </summary>
+    private static Mat TaoMatNaThan(Mat src, RectXoay roi, PmCfg cfg, Action<string>? log)
     {
         var than = new Mat(src.Size(), MatType.CV_8UC1, Scalar.All(0));
-        if (src.Channels() < 3) { than.SetTo(Scalar.All(255)); return than; }
+        if (cfg.MatNaThan == KieuThan.Khong) { than.SetTo(Scalar.All(255)); return than; }
 
-        var kenh = Cv2.Split(src);
-        using var min = new Mat();
-        Cv2.Min(kenh[0], kenh[1], min);
-        Cv2.Min(min, kenh[2], min);
-        foreach (var c in kenh) c.Dispose();
+        var khung = KhungMatNa(roi, src.Size(), cfg);
+        if (khung.Width < 8 || khung.Height < 8) { than.SetTo(Scalar.All(255)); return than; }
 
+        using var cat = new Mat(src, khung);
+        using var nen = NenChoOtsu(cat, cfg.MatNaThan);
+
+        // Otsu chọn ngưỡng, và ngưỡng đó được ghi ra nhật ký: khi mặt nạ sai, biết Otsu cắt ở
+        // đâu là biết ngay nó tách nhầm vật với nền hay tách nhầm hai phần của chính vật.
         using var bin = new Mat();
-        Cv2.Threshold(min, bin, 0, 255, ThresholdTypes.BinaryInv | ThresholdTypes.Otsu);
-        Cv2.FindContours(bin, out Point[][] cts, out _, RetrievalModes.External, ContourApproximationModes.ApproxNone);
-        if (cts.Length == 0) { than.SetTo(Scalar.All(255)); return than; }
+        var kieu = cfg.MatNaThan == KieuThan.VatSangNenToi
+                   ? ThresholdTypes.Binary : ThresholdTypes.BinaryInv;
+        double nguong = Cv2.Threshold(nen, bin, 0, 255, kieu | ThresholdTypes.Otsu);
+        Dbg.Show(bin, $"mat na 1. otsu {cfg.MatNaThan} nguong={nguong:F0}");
 
+        Cv2.FindContours(bin, out Point[][] cts, out _, RetrievalModes.External, ContourApproximationModes.ApproxNone);
+        if (cts.Length == 0)
+        {
+            log?.Invoke("CANH BAO: mat na than khong tim duoc blob nao — bo qua mat na than.");
+            than.SetTo(Scalar.All(255));
+            return than;
+        }
+
+        // Blob lớn nhất TRONG KHUNG ROI. Bao lồi là tuỳ chọn: vật lồi thì hull vá được các
+        // lỗ do bóng/ánh sáng, vật hình C hay khung rỗng thì hull nuốt luôn cả phần rỗng.
         var ngoai = cts.OrderByDescending(c => Cv2.ContourArea(c)).First();
-        Cv2.DrawContours(than, new[] { Cv2.ConvexHull(ngoai) }, -1, Scalar.All(255), -1);
+        var hinh = cfg.BaoLoiThan ? Cv2.ConvexHull(ngoai) : ngoai;
+
+        using var thanCat = new Mat(khung.Size, MatType.CV_8UC1, Scalar.All(0));
+        Cv2.DrawContours(thanCat, new[] { hinh }, -1, Scalar.All(255), -1);
+
+        double pBlob = Cv2.CountNonZero(thanCat) / (double)(khung.Width * khung.Height);
+        log?.Invoke($"Mat na than: khung {khung.Width}x{khung.Height} quanh ROI, Otsu={nguong:F0}, " +
+                    $"{cts.Length} blob, blob lon nhat{(cfg.BaoLoiThan ? " + bao loi" : "")} phu {pBlob:P1} khung.");
+
+        thanCat.CopyTo(new Mat(than, khung));
         return than;
     }
 
     /// <summary>
-    /// Vùng dây đồng ở ảnh gốc. Dùng (R − B) chứ không dùng HSV: khi đồng cháy sáng thì độ
-    /// bão hoà tụt và HSV mất dấu, còn hiệu hai kênh vẫn dương.
-    ///
-    /// Bước MỞ (opening) là bắt buộc: chỗ chuyển từ vật đen sang nền trắng luôn có quang sai
-    /// màu nên (R − B) vọt lên ngay TRÊN ĐƯỜNG BIÊN. Không mở thì don-care xoá mất đúng cái
-    /// biên quý nhất. Vệt quang sai rộng 1–3px, cuộn dây rộng hàng chục px, nên mở là tách được.
+    /// Ảnh một kênh đưa cho Otsu. <see cref="KieuThan.ToiNenSang_Min3Kenh"/> dùng min ba kênh
+    /// thay ảnh xám vì trên 1240S dây đồng cháy sáng ngang với nền backlight trên ảnh xám —
+    /// Otsu trên ảnh xám ăn mất nguyên một cạnh dài, còn min ba kênh thì dây đồng vẫn tối.
     /// </summary>
-    private static Mat VungDong(Mat src, PmCfg cfg)
+    private static Mat NenChoOtsu(Mat cat, KieuThan kieu)
     {
-        var dong = new Mat(src.Size(), MatType.CV_8UC1, Scalar.All(0));
-        var kenh = Cv2.Split(src);
+        if (kieu != KieuThan.ToiNenSang_Min3Kenh || cat.Channels() < 3) return ToXam(cat);
+
+        var kenh = Cv2.Split(cat);
+        var min = new Mat();
+        Cv2.Min(kenh[0], kenh[1], min);
+        Cv2.Min(min, kenh[2], min);
+        foreach (var c in kenh) c.Dispose();
+        return min;
+    }
+
+    /// <summary>
+    /// Mặt nạ CHE (don-care) trên hệ toạ độ ẢNH GỐC. Các hình người dùng vẽ được cộng thêm
+    /// ở <see cref="Train"/>, hàm này chỉ lo phần tự dò.
+    ///
+    /// <see cref="KieuChe.HieuKenhRB"/>: dùng (R − B) chứ không dùng HSV, vì khi đồng cháy
+    /// sáng thì độ bão hoà tụt và HSV mất dấu, còn hiệu hai kênh vẫn dương. Bước MỞ là bắt
+    /// buộc: chỗ chuyển từ vật đen sang nền trắng luôn có quang sai màu nên (R − B) vọt lên
+    /// ngay TRÊN ĐƯỜNG BIÊN; không mở thì don-care xoá mất đúng cái biên quý nhất. Vệt quang
+    /// sai rộng 1–3px, cuộn dây rộng hàng chục px, nên mở là tách được.
+    /// </summary>
+    private static Mat TaoMatNaChe(Mat src, RectXoay roi, PmCfg cfg, Action<string>? log)
+    {
+        var che = new Mat(src.Size(), MatType.CV_8UC1, Scalar.All(0));
+        if (cfg.MatNaChe == KieuChe.Khong) return che;
+
+        if (src.Channels() < 3)
+        {
+            log?.Invoke("CANH BAO: anh 1 kenh, mat na che theo mau khong dung duoc — bo qua.");
+            return che;
+        }
+
+        var khung = KhungMatNa(roi, src.Size(), cfg);
+        if (khung.Width < 8 || khung.Height < 8) return che;
+
+        using var cat = new Mat(src, khung);
+        var kenh = Cv2.Split(cat);
         using var hieu = new Mat();
         Cv2.Subtract(kenh[2], kenh[0], hieu);
+        double lech = Cv2.Mean(hieu).Val0;
         foreach (var c in kenh) c.Dispose();
 
-        Cv2.Threshold(hieu, dong, cfg.NguongDongRB, 255, ThresholdTypes.Binary);
-        if (cfg.MoVungDong > 0) Cv2.MorphologyEx(dong, dong, MorphTypes.Open, Dia(cfg.MoVungDong));
-        if (cfg.NoiRongDongChe > 0) Cv2.Dilate(dong, dong, Dia(cfg.NoiRongDongChe));
-        return dong;
+        using var cheCat = new Mat();
+        Cv2.Threshold(hieu, cheCat, cfg.NguongDongRB, 255, ThresholdTypes.Binary);
+        if (cfg.MoVungDong > 0) Cv2.MorphologyEx(cheCat, cheCat, MorphTypes.Open, Dia(cfg.MoVungDong));
+        if (cfg.NoiRongDongChe > 0) Cv2.Dilate(cheCat, cheCat, Dia(cfg.NoiRongDongChe));
+        Dbg.Show(cheCat, $"mat na 2. che (R−B) > {cfg.NguongDongRB}");
+
+        double p = Cv2.CountNonZero(cheCat) / (double)(khung.Width * khung.Height);
+        log?.Invoke($"Mat na che (R−B > {cfg.NguongDongRB}): phu {p:P1} khung, R−B trung binh {lech:F1}.");
+
+        // Ảnh xám lưu ở 3 kênh thì R − B = 0 khắp nơi: mặt nạ rỗng, vô hại nhưng cũng vô dụng.
+        // Nói ra để người dùng khỏi ngồi vặn ngưỡng một buổi.
+        if (p < 1e-6)
+            log?.Invoke("  (che rong — anh nay khong co thanh phan mau, hoac nguong qua cao)");
+
+        cheCat.CopyTo(new Mat(che, khung));
+        return che;
     }
 
     // ==========================================================================

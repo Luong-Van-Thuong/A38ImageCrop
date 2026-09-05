@@ -46,6 +46,9 @@ public partial class CuaSoPmAlign : Window
 
     private bool _sanSang;
 
+    /// <summary>Cua so soi tung buoc bien doi. Null = dang tat debug.</summary>
+    private CuaSoDbg? _dbg;
+
     // ---------------- Xem ảnh ----------------
 
     private readonly MatrixTransform _bd = new();
@@ -589,6 +592,7 @@ public partial class CuaSoPmAlign : Window
         var nhat = new List<string>();
 
         BatNut(false);
+        _dbg?.BatDauLuot("TRAIN " + Path.GetFileName(_duongDanAnh));
         try
         {
             var dh = Stopwatch.StartNew();
@@ -619,7 +623,7 @@ public partial class CuaSoPmAlign : Window
             VeLai();
         }
         catch (Exception ex) { Bao(ex.ToString()); }
-        finally { BatNut(true); }
+        finally { BatNut(true); _dbg?.XongLuot(); }
     }
 
     private async void Run_Click(object sender, RoutedEventArgs e)
@@ -635,6 +639,7 @@ public partial class CuaSoPmAlign : Window
         var nhat = new List<string>();
 
         BatNut(false);
+        _dbg?.BatDauLuot("RUN " + Path.GetFileName(_duongDanAnh));
         try
         {
             var dh = Stopwatch.StartNew();
@@ -657,7 +662,62 @@ public partial class CuaSoPmAlign : Window
             VeLai();
         }
         catch (Exception ex) { Bao(ex.ToString()); }
-        finally { BatNut(true); }
+        finally { BatNut(true); _dbg?.XongLuot(); }
+    }
+
+    // ==========================================================================
+    //  Debug: soi tung buoc bien doi
+    // ==========================================================================
+
+    /// <summary>Bat debug tu ben ngoai (co --debug tren dong lenh): tick ho cai o.</summary>
+    public void BatDebugTuNgoai() => CbDebug.IsChecked = true;
+
+    private void CbDebug_Doi(object sender, RoutedEventArgs e)
+    {
+        if (CbDebug.IsChecked == true) BatDebug();
+        else TatDebug();
+    }
+
+    /// <summary>
+    /// Mo cua so Debug va cam no vao <see cref="Dbg"/>.
+    ///
+    /// ShowWindow/Pause bi ep tat vinh vien o day: Train/Run nam trong Task.Run, ma
+    /// Cv2.ImShow + WaitKey(0) tren luong do la treo ngam. SaveFile cung tat, de nguoi
+    /// dung tu bat lai trong cua so Debug neu that su can file PNG.
+    /// </summary>
+    private void BatDebug()
+    {
+        if (_dbg == null)
+        {
+            _dbg = new CuaSoDbg { Owner = this };
+            _dbg.Closed += (_, _) =>
+            {
+                _dbg = null;
+                if (CbDebug.IsChecked == true) CbDebug.IsChecked = false;   // keo theo TatDebug
+            };
+        }
+
+        Dbg.Enabled = true;
+        Dbg.ShowWindow = false;
+        Dbg.Pause = false;
+        Dbg.SaveFile = false;
+        Dbg.Filter = null;
+        Dbg.Sink = _dbg.NhanAnh;
+        Dbg.SinkChu = _dbg.NhanChu;
+        Dbg.ChoBuoc = _dbg.ChoNguoiDungBam;
+
+        _dbg.Show();
+        _dbg.Activate();
+    }
+
+    private void TatDebug()
+    {
+        Dbg.Sink = null;
+        Dbg.SinkChu = null;
+        Dbg.ChoBuoc = null;
+        Dbg.Enabled = false;
+        Dbg.SaveFile = false;
+        _dbg?.MoKhoa();     // luong xu ly co the dang ngoi cho nut "Tiep"
     }
 
     private void XemModel_Click(object sender, RoutedEventArgs e)
@@ -753,17 +813,24 @@ public partial class CuaSoPmAlign : Window
         TSoDiem.Text = _cfg.SoDiemToiDa.ToString();
         TBienMin.Text = _cfg.NguongBienToiThieu.ToString();
 
-        CbThan.IsChecked = _cfg.ChiLayTrenThan;
-        CbDong.IsChecked = _cfg.TuCheVungDong;
+        // Thứ tự mục trong hai ComboBox trùng đúng thứ tự khai báo của KieuThan / KieuChe,
+        // nên ép kiểu thẳng sang int là đủ — không cần bảng tra.
+        CbThan.SelectedIndex = (int)_cfg.MatNaThan;
+        CbDong.SelectedIndex = (int)_cfg.MatNaChe;
+        CbBaoLoi.IsChecked = _cfg.BaoLoiThan;
         TDongRB.Text = _cfg.NguongDongRB.ToString();
         TMoDong.Text = _cfg.MoVungDong.ToString();
         TNoiChe.Text = _cfg.NoiRongDongChe.ToString();
+        TNoiThan.Text = _cfg.NoiRongThan.ToString();
+        TNoiKhung.Text = _cfg.NoiKhungMatNa.ToString("F2", CultureInfo.InvariantCulture);
+        TThanMin.Text = _cfg.ThanToiThieu.ToString("F2", CultureInfo.InvariantCulture);
 
         TGocTu.Text = _cfg.GocTuDo.ToString("F1", CultureInfo.InvariantCulture);
         TGocDen.Text = _cfg.GocDenDo.ToString("F1", CultureInfo.InvariantCulture);
         TUngVien.Text = _cfg.SoUngVienDinh.ToString();
         TDiemMin.Text = _cfg.DiemToiThieu.ToString("F2", CultureInfo.InvariantCulture);
         TSoKq.Text = _cfg.SoKetQua.ToString();
+        THeSoSan.Text = _cfg.HeSoSanChay.ToString("F2", CultureInfo.InvariantCulture);
         CbNoiSuy.IsChecked = _cfg.NoiSuyDuoiPixel;
     }
 
@@ -776,17 +843,22 @@ public partial class CuaSoPmAlign : Window
         _cfg.SoDiemToiDa = Math.Clamp(Nguyen(TSoDiem, _cfg.SoDiemToiDa), 8, 20000);
         _cfg.NguongBienToiThieu = Math.Clamp(Nguyen(TBienMin, _cfg.NguongBienToiThieu), 1, 255);
 
-        _cfg.ChiLayTrenThan = CbThan.IsChecked == true;
-        _cfg.TuCheVungDong = CbDong.IsChecked == true;
+        _cfg.MatNaThan = (KieuThan)Math.Clamp(CbThan.SelectedIndex, 0, 3);
+        _cfg.MatNaChe = (KieuChe)Math.Clamp(CbDong.SelectedIndex, 0, 1);
+        _cfg.BaoLoiThan = CbBaoLoi.IsChecked == true;
         _cfg.NguongDongRB = Math.Clamp(Nguyen(TDongRB, _cfg.NguongDongRB), 1, 255);
         _cfg.MoVungDong = Math.Clamp(Nguyen(TMoDong, _cfg.MoVungDong), 0, 50);
         _cfg.NoiRongDongChe = Math.Clamp(Nguyen(TNoiChe, _cfg.NoiRongDongChe), 0, 100);
+        _cfg.NoiRongThan = Math.Clamp(Nguyen(TNoiThan, _cfg.NoiRongThan), 0, 100);
+        _cfg.NoiKhungMatNa = Math.Clamp(Thuc(TNoiKhung, _cfg.NoiKhungMatNa), 0, 3.0);
+        _cfg.ThanToiThieu = Math.Clamp(Thuc(TThanMin, _cfg.ThanToiThieu), 0, 0.9);
 
         _cfg.GocTuDo = Math.Clamp(Thuc(TGocTu, _cfg.GocTuDo), -360, 360);
         _cfg.GocDenDo = Math.Clamp(Thuc(TGocDen, _cfg.GocDenDo), -360, 360);
         _cfg.SoUngVienDinh = Math.Clamp(Nguyen(TUngVien, _cfg.SoUngVienDinh), 1, 500);
         _cfg.DiemToiThieu = Math.Clamp(Thuc(TDiemMin, _cfg.DiemToiThieu), 0, 1);
         _cfg.SoKetQua = Math.Clamp(Nguyen(TSoKq, _cfg.SoKetQua), 1, 100);
+        _cfg.HeSoSanChay = Math.Clamp(Thuc(THeSoSan, _cfg.HeSoSanChay), 0.05, 5.0);
         _cfg.NoiSuyDuoiPixel = CbNoiSuy.IsChecked == true;
 
         DoCfgRaGiaoDien();
@@ -822,6 +894,8 @@ public partial class CuaSoPmAlign : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        TatDebug();
+        _dbg?.Close();
         _anh?.Dispose();
         _mauMau?.Dispose();
         base.OnClosed(e);
