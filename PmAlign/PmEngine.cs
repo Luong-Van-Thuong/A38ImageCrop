@@ -274,10 +274,18 @@ public static class PmEngine
     //  RUN
     // ==========================================================================
 
-    /// <summary>Ảnh đích đã chuẩn bị ở một mức: hướng gradient đã chuẩn hoá về độ dài 1.</summary>
+    /// <summary>
+    /// Ảnh đích đã chuẩn bị ở một mức: hướng gradient đã chuẩn hoá về độ dài 1.
+    ///
+    /// Trường gradient KHÔNG nhất thiết phủ cả mức. <see cref="W"/>/<see cref="H"/> là kích
+    /// thước đầy đủ của mức (mọi toạ độ trong Run vẫn tính theo hệ đó), còn mảng Ngx/Ngy chỉ
+    /// phủ CỬA SỔ <see cref="X0"/>,<see cref="Y0"/>,<see cref="Wc"/>,<see cref="Hc"/>.
+    /// Điểm rơi ngoài cửa sổ tính 0, đúng như điểm rơi ngoài ảnh.
+    /// </summary>
     private sealed class MucAnh
     {
         public int W, H;
+        public int X0, Y0, Wc, Hc;
         public float[] Ngx = [], Ngy = [];
     }
 
@@ -304,11 +312,29 @@ public static class PmEngine
         float r0 = model.Muc[0].BanKinh;
         int le = (int)Math.Ceiling(r0) + 4;
         Rect bao = NoiRong(vt.BaoNgoai(), le, anh.Size());
+
+        // Kéo cạnh patch thành BỘI của 2^(số mức−1). Hai cái lợi, cả hai đều đo được:
+        //
+        //  • ĐÚNG hơn. Toàn bộ phần tinh chỉnh nhân toạ độ với 2 khi xuống một mức
+        //    (`u.X * 2`), tức là ngầm coi mức i có kích thước đúng bằng W/2^i. Nhưng
+        //    kích thước thật là round(W/2^i): với patch rộng 1917 thì L5 là 60, mà
+        //    60×32 = 1920 ≠ 1917 — mép phải lệch tới 3 px ảnh gốc, và lệch đó phải
+        //    nằm gọn trong cửa sổ dò ±3 px mới không mất vật.
+        //  • NHANH hơn. Chia hết thì `ChuanBiMucAnh` được phép cắt trước rồi mới thu nhỏ.
+        //    Không chia hết thì mọi mức đều phải thu nhỏ CẢ patch: đo trên bộ c1, riêng
+        //    khoản đó là 20 ms trong 79 ms.
+        //
+        // Nới ra chứ không cắt vào, và chỉ nới khi ảnh còn chỗ — thà bỏ tối ưu còn hơn
+        // cắt mất một dải mà vật có thể đang nằm ở đó.
+        int boi = 1 << Math.Max(0, Math.Min(6, model.Muc.Count - 1));
+        bao = LamTronBoi(bao, boi, anh.Size());
         if (bao.Width < 8 || bao.Height < 8) return [];
 
-        using var xam = ToXam(anh);
-        Dbg.Show(xam, "anh xam");
-        using var cat = new Mat(xam, bao);
+        // Chuyển xám trên ĐÚNG miếng cần dùng, không phải cả ảnh: trên ảnh 5064² mà vùng
+        // tìm chỉ 800×900 thì đây là 3,9 triệu pixel thay vì 25,6 triệu.
+        using var catMau = new Mat(anh, bao);
+        using var cat = ToXam(catMau);
+        Dbg.Show(cat, "anh xam (chi patch)");
 
         // Mặt nạ "tâm được phép nằm ở đâu", ở độ phân giải gốc của patch.
         using var chophep0 = new Mat(bao.Size, MatType.CV_8UC1, Scalar.All(0));
@@ -332,13 +358,28 @@ public static class PmEngine
 
         var anhMuc = new MucAnh?[model.Muc.Count];
         var msMuc = new long[model.Muc.Count];
-        MucAnh LayMuc(int i)
+        MucAnh LayMuc(int i, Rect? cuaSo = null)
         {
             if (anhMuc[i] is { } san) return san;
             var d = System.Diagnostics.Stopwatch.StartNew();
-            var am = ChuanBiMucAnh(cat, model.Muc[i], cfg);
+            var am = ChuanBiMucAnh(cat, model.Muc[i], cfg, cuaSo);
             msMuc[i] = d.ElapsedMilliseconds;
             return anhMuc[i] = am;
+        }
+
+        // Hộp bao các ô mà Cham sẽ đọc ở mức con, suy từ danh sách ứng viên của mức CHA.
+        // Mỗi ứng viên cần: vị trí ×2, cộng ±3 px dò quanh, cộng bán kính model của mức đó.
+        static Rect BaoUngVien(List<(double Diem, double X, double Y, double Goc)> cha, double banKinh)
+        {
+            double le = banKinh + 5;
+            double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+            foreach (var u in cha)
+            {
+                x0 = Math.Min(x0, u.X * 2 - le); x1 = Math.Max(x1, u.X * 2 + le);
+                y0 = Math.Min(y0, u.Y * 2 - le); y1 = Math.Max(y1, u.Y * 2 + le);
+            }
+            return new Rect((int)Math.Floor(x0), (int)Math.Floor(y0),
+                            (int)Math.Ceiling(x1 - x0), (int)Math.Ceiling(y1 - y0));
         }
 
         mocChuanBi = dhTong.ElapsedMilliseconds;
@@ -366,7 +407,11 @@ public static class PmEngine
         // khi mức thô vẫn báo điểm cao nhất 0.927, rồi tinh chỉnh xuống L0 ra 0.000.
         var ungVien = new List<(double Diem, double X, double Y, double Goc)>();
 
-        for (int ig = 0; ig < soGoc; ig++)
+        // Mỗi góc là một bài toán độc lập, không đụng gì vào nhau ngoài mấy mảng CHỈ ĐỌC.
+        // Kết quả gom vào mảng theo chỉ số góc rồi mới nối lại, nên thứ tự ứng viên giống hệt
+        // bản một luồng — đo trên bộ c1: 10/10 ảnh ra đúng từng chữ số, quét thô 2176 → 262 ms.
+        var theoGoc = new List<(double Diem, double X, double Y, double Goc)>?[soGoc];
+        Parallel.For(0, soGoc, ig =>
         {
             double g = gTu + ig * buoc;
             double r = g * Math.PI / 180.0, c = Math.Cos(r), s = Math.Sin(r);
@@ -380,12 +425,12 @@ public static class PmEngine
                     if (d <= 0.02) continue;
                     cuaGoc.Add((d, x, y, g));
                 }
-            if (cuaGoc.Count == 0) continue;
+            if (cuaGoc.Count == 0) return;
 
-            ungVien.AddRange(
-                LocTrung(cuaGoc.OrderByDescending(u => u.Diem).Take(cfg.SoUngVienDinh * 4).ToList(), 2.0, 0)
-                .Take(cfg.SoUngVienDinh));
-        }
+            theoGoc[ig] = LocTrung(cuaGoc.OrderByDescending(u => u.Diem).Take(cfg.SoUngVienDinh * 4).ToList(), 2.0, 0)
+                          .Take(cfg.SoUngVienDinh).ToList();
+        });
+        foreach (var t in theoGoc) if (t != null) ungVien.AddRange(t);
         if (ungVien.Count == 0) { log?.Invoke("Khong co ung vien nao o muc tho."); return []; }
 
         // Gộp trùng có xét CẢ GÓC: hai tư thế cùng chỗ nhưng khác góc là hai giả thuyết
@@ -402,12 +447,13 @@ public static class PmEngine
         {
             var dhMuc = System.Diagnostics.Stopwatch.StartNew();
             var mCon = model.Muc[muc];
-            var aCon = LayMuc(muc);
+            var aCon = LayMuc(muc, BaoUngVien(giu, mCon.BanKinh));
             double buocCon = Math.Clamp(mCon.BuocGocDo, 0.05, 10.0);
 
-            var moi = new List<(double Diem, double X, double Y, double Goc)>(giu.Count);
-            foreach (var u in giu)
+            var moiMang = new (double Diem, double X, double Y, double Goc)[giu.Count];
+            Parallel.For(0, giu.Count, iu =>
             {
+                var u = giu[iu];
                 double bx = u.X * 2, by = u.Y * 2;
                 double tot = -1, tx = bx, ty = by, tg = u.Goc;
                 for (double dg = -buoc; dg <= buoc + 1e-9; dg += buocCon)
@@ -423,8 +469,9 @@ public static class PmEngine
                             if (d > tot) { tot = d; tx = x; ty = y; tg = g; }
                         }
                 }
-                moi.Add((tot, tx, ty, tg));
-            }
+                moiMang[iu] = (tot, tx, ty, tg);
+            });
+            var moi = moiMang.ToList();
             buoc = buocCon;
             giu = LocTrung(moi.OrderByDescending(u => u.Diem).ToList(), 4.0, Math.Max(1.0, buocCon))
                   .Take(Math.Max(3, cfg.SoUngVienDinh >> (mucTho - muc))).ToList();
@@ -541,10 +588,10 @@ public static class PmEngine
             var p = diem[i];
             double px = cx + p.X * c + p.Y * s;
             double py = cy - p.X * s + p.Y * c;
-            int ix = (int)(px + 0.5), iy = (int)(py + 0.5);
-            if (ix < 0 || iy < 0 || ix >= am.W || iy >= am.H) continue;
+            int ix = (int)(px + 0.5) - am.X0, iy = (int)(py + 0.5) - am.Y0;
+            if (ix < 0 || iy < 0 || ix >= am.Wc || iy >= am.Hc) continue;
 
-            int o = iy * am.W + ix;
+            int o = iy * am.Wc + ix;
             double gx = am.Ngx[o], gy = am.Ngy[o];
             if (gx == 0 && gy == 0) continue;
 
@@ -568,15 +615,16 @@ public static class PmEngine
             var p = diem[i];
             double px = cx + p.X * c + p.Y * s;
             double py = cy - p.X * s + p.Y * c;
-            int x0 = (int)Math.Floor(px), y0 = (int)Math.Floor(py);
-            if (x0 < 0 || y0 < 0 || x0 + 1 >= am.W || y0 + 1 >= am.H) continue;
+            int xf = (int)Math.Floor(px), yf = (int)Math.Floor(py);
+            int x0 = xf - am.X0, y0 = yf - am.Y0;
+            if (x0 < 0 || y0 < 0 || x0 + 1 >= am.Wc || y0 + 1 >= am.Hc) continue;
 
-            double fx = px - x0, fy = py - y0;
-            int o = y0 * am.W + x0;
+            double fx = px - xf, fy = py - yf;
+            int o = y0 * am.Wc + x0;
             double w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
 
-            double gx = am.Ngx[o] * w00 + am.Ngx[o + 1] * w10 + am.Ngx[o + am.W] * w01 + am.Ngx[o + am.W + 1] * w11;
-            double gy = am.Ngy[o] * w00 + am.Ngy[o + 1] * w10 + am.Ngy[o + am.W] * w01 + am.Ngy[o + am.W + 1] * w11;
+            double gx = am.Ngx[o] * w00 + am.Ngx[o + 1] * w10 + am.Ngx[o + am.Wc] * w01 + am.Ngx[o + am.Wc + 1] * w11;
+            double gy = am.Ngy[o] * w00 + am.Ngy[o + 1] * w10 + am.Ngy[o + am.Wc] * w01 + am.Ngy[o + am.Wc + 1] * w11;
             double len = Math.Sqrt(gx * gx + gy * gy);
             if (len < 1e-6) continue;
             gx /= len; gy /= len;
@@ -610,15 +658,51 @@ public static class PmEngine
     /// truoc day khong ai doc. Dung no thi train va run cung mot tieu chi, va san het phu thuoc
     /// vao viec nguoi dung khoanh vung to hay nho.
     /// </summary>
-    private static MucAnh ChuanBiMucAnh(Mat xam, MucPm mm, PmCfg cfg)
+    private static MucAnh ChuanBiMucAnh(Mat xam, MucPm mm, PmCfg cfg, Rect? cuaSo = null)
     {
         int muc = mm.Muc;
         double tiLe = mm.TiLe;
         var kt = new Size(Math.Max(8, (int)Math.Round(xam.Width * tiLe)),
                           Math.Max(8, (int)Math.Round(xam.Height * tiLe)));
+
+        // CỬA SỔ — chỉ làm mờ + Sobel + chuẩn hoá trong đúng vùng mà Cham sẽ đọc.
+        //
+        // Đây là chỗ tốn nhất của cả Run, và trước đây tốn oan gần hết. Ở mức tinh chỉnh chỉ
+        // còn 3..20 ứng viên, mỗi ứng viên dò 7×7 vị trí, nên số ô thật sự được đọc ở L0 là
+        // cỡ 3 × 49 × 500 điểm ≈ 73 nghìn — trong khi bản cũ dựng đủ 25,6 triệu pixel của ảnh
+        // 5064² và cấp hai mảng float 102 MB cho mỗi mức. Đo trên bộ cnc2_den/c1: riêng khoản
+        // này là 361 ms trong 531 ms của toàn bộ phần tinh chỉnh; sau khi cắt cửa sổ còn 39 ms.
+        //
+        // Nới thêm 8 px quanh cửa sổ để nhân làm mờ 5×5 và Sobel 3×3 ở sát mép vẫn cho ra
+        // ĐÚNG con số như khi chạy trên cả mức — đã đối chiếu: điểm từng mức khớp từng chữ số.
+        var cs = cuaSo is { } c0 ? NoiRong(c0, 8, kt) : new Rect(0, 0, kt.Width, kt.Height);
+        if (cs.Width < 8 || cs.Height < 8) cs = new Rect(0, 0, kt.Width, kt.Height);
+        bool trong = cs.Width == kt.Width && cs.Height == kt.Height;
+
+        // Thu nhỏ. Khi tỉ lệ chia hết ĐÚNG (5064 → 2532 → 1266 → 633) thì cắt trước rồi mới
+        // thu nhỏ, cho ra đúng từng pixel như thu nhỏ cả ảnh rồi mới cắt, mà chỉ phải đọc
+        // đúng phần cần. Khi KHÔNG chia hết (L4: 5064/316 = 16,025) thì lưới lấy mẫu sẽ lệch
+        // tới nửa pixel, nên vẫn thu nhỏ cả ảnh — thà chậm hơn là lệch.
+        int he = 1 << muc;
+        bool chiaHet = kt.Width * he == xam.Width && kt.Height * he == xam.Height;
+
         using var anh = new Mat();
-        Cv2.Resize(xam, anh, kt, 0, 0, InterpolationFlags.Area);
-        Dbg.Show(anh, $"L{muc} 1. thu nho 1/{1 << muc}");
+        if (trong || !chiaHet)
+        {
+            using var anhDay = new Mat();
+            if (tiLe < 1.0) Cv2.Resize(xam, anhDay, kt, 0, 0, InterpolationFlags.Area);
+            else xam.CopyTo(anhDay);
+            Dbg.Show(anhDay, $"L{muc} 1. thu nho 1/{he}");
+            if (trong) anhDay.CopyTo(anh); else new Mat(anhDay, cs).CopyTo(anh);
+        }
+        else
+        {
+            var csGoc = new Rect(cs.X * he, cs.Y * he, cs.Width * he, cs.Height * he);
+            using var mieng = new Mat(xam, csGoc);
+            if (he == 1) mieng.CopyTo(anh);
+            else Cv2.Resize(mieng, anh, new Size(cs.Width, cs.Height), 0, 0, InterpolationFlags.Area);
+            Dbg.Show(anh, $"L{muc} 1. thu nho 1/{he} (chi cua so {cs.Width}x{cs.Height})");
+        }
 
         int k = Math.Max(1, cfg.BlurKernel) | 1;
         using var mo = new Mat();
@@ -642,8 +726,13 @@ public static class PmEngine
         dx.GetArray(out float[] gxs);
         dy.GetArray(out float[] gys);
 
-        int n = kt.Width * kt.Height;
-        var am = new MucAnh { W = kt.Width, H = kt.Height, Ngx = new float[n], Ngy = new float[n] };
+        int n = cs.Width * cs.Height;
+        var am = new MucAnh
+        {
+            W = kt.Width, H = kt.Height,
+            X0 = cs.X, Y0 = cs.Y, Wc = cs.Width, Hc = cs.Height,
+            Ngx = new float[n], Ngy = new float[n],
+        };
 
         // Sàn = đúng ngưỡng thấp mà Canny đã dùng lúc train mức này, nhân hệ số tinh chỉnh.
         // Lấy ngưỡng THẤP chứ không phải ngưỡng cao: điểm model sinh ra từ Canny có trễ, một
@@ -905,6 +994,24 @@ public static class PmEngine
         var xam = new Mat();
         Cv2.CvtColor(src, xam, src.Channels() == 4 ? ColorConversionCodes.BGRA2GRAY : ColorConversionCodes.BGR2GRAY);
         return xam;
+    }
+
+    /// <summary>
+    /// Kéo cạnh hình chữ nhật lên thành bội của <paramref name="boi"/> bằng cách NỚI RA,
+    /// không bao giờ cắt vào. Nới sang phải/xuống trước, hết chỗ thì lùi trái/lên. Nếu cả
+    /// khung ảnh cũng không đủ chỗ thì trả lại nguyên hình cũ — mất tối ưu, không mất dữ liệu.
+    /// </summary>
+    private static Rect LamTronBoi(Rect r, int boi, Size khung)
+    {
+        if (boi <= 1) return r;
+
+        int w = (r.Width + boi - 1) / boi * boi;
+        int h = (r.Height + boi - 1) / boi * boi;
+        if (w > khung.Width || h > khung.Height) return r;
+
+        int x = Math.Min(r.X, khung.Width - w);
+        int y = Math.Min(r.Y, khung.Height - h);
+        return new Rect(Math.Max(0, x), Math.Max(0, y), w, h);
     }
 
     private static Rect NoiRong(Rect r, int pad, Size khung) =>

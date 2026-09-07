@@ -605,6 +605,7 @@ public partial class CuaSoPmAlign : Window
 
             _model = model;
             _model.TenAnhMau = Path.GetFileName(_duongDanAnh);
+            _model.VungTim = _vungTim;      // đi theo model, xem PmModel.VungTim
             _mauMau?.Dispose();
             _mauMau = mau;
             _ketQua = [];
@@ -618,6 +619,15 @@ public partial class CuaSoPmAlign : Window
                 $"ti le don bay {_model.Muc[tho].TiLeDonBay:P0}");
             if (_model.Muc[tho].TiLeDonBay < 0.15)
                 Ghi("  CANH BAO: don bay xoay rat thap — mau nay gan nhu tron xoay, goc se khong on dinh.");
+
+            // Vùng tìm kiếm quyết định cả tốc độ lẫn khả năng từ chối — lý do đầy đủ ở
+            // PmModel.VungTim. Nói to lúc train, vì lúc đó sửa còn dễ.
+            if (_model.VungTim.HopLe)
+                Ghi($"  Vung tim {_model.VungTim} da duoc luu vao model.");
+            else
+                Ghi("  CANH BAO: CHUA khoanh vung tim kiem — Run se quet ca anh. Cham hon nhieu lan, " +
+                    "va model KHONG con tu choi duoc anh khong co vat (do duoc: cung mot mau cho diem " +
+                    "0.982 o cho khac trong anh). Khoanh 'Vung tim' roi Train lai.");
 
             TtThongTin.Text = $"Train xong: {_model.Muc.Sum(m => m.Diem.Length)} diem / {_model.Muc.Count} muc, {dh.ElapsedMilliseconds} ms";
             VeLai();
@@ -767,7 +777,10 @@ public partial class CuaSoPmAlign : Window
             FileName = (Path.GetFileNameWithoutExtension(_duongDanAnh) is { Length: > 0 } t ? t : "model") + ".pmm.json",
         };
         if (hop.ShowDialog(this) != true) return;
-        try { _model.Luu(hop.FileName); Ghi($"Da luu model: {hop.FileName}"); }
+        // Lấy lại vùng tìm ngay lúc lưu: người dùng hay khoanh lại vùng SAU khi đã Train,
+        // lưu theo bản lúc Train là lưu ra thứ họ không còn nhìn thấy trên màn hình.
+        _model.VungTim = _vungTim;
+        try { _model.Luu(hop.FileName); Ghi($"Da luu model: {hop.FileName}  (vung tim {(_vungTim.HopLe ? _vungTim.ToString() : "CHUA KHOANH")})"); }
         catch (Exception ex) { Bao(ex.Message); }
     }
 
@@ -789,8 +802,15 @@ public partial class CuaSoPmAlign : Window
             _ketQua = [];
             DsKetQua.Items.Clear();
 
+            // Vùng tìm kiếm cũng khôi phục. Model cũ chưa có trường này thì giữ nguyên vùng
+            // đang khoanh, không xoá đi của người dùng.
+            if (_model.VungTim.HopLe) _vungTim = _model.VungTim;
+
             Ghi($"Da nap model: {hop.FileName}");
             Ghi($"  anh mau {_model.TenAnhMau}, mau {_model.Rong}x{_model.Cao}, ROI {_model.Roi}");
+            Ghi(_model.VungTim.HopLe
+                ? $"  vung tim {_model.VungTim} (nap tu model)"
+                : "  model nay CHUA co vung tim — giu nguyen vung dang khoanh tren man hinh.");
             foreach (var m in _model.Muc)
                 Ghi($"  L{m.Muc} {m.Rong}x{m.Cao}  {m.Diem.Length} diem  buoc goc {m.BuocGocDo:F2} do");
 

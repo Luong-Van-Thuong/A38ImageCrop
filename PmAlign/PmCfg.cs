@@ -128,8 +128,16 @@ public sealed class PmCfg
     /// <summary>Số ứng viên giữ lại ở mức thô nhất rồi thu hẹp dần khi xuống mức mịn.</summary>
     public int SoUngVienDinh = 40;
 
-    /// <summary>Ngưỡng nhận kết quả (Accept Threshold). Điểm đã trừ nền ngẫu nhiên nên 0.3 là đã khá chắc.</summary>
-    public double DiemToiThieu = 0.30;
+    /// <summary>
+    /// Ngưỡng nhận kết quả (Accept Threshold). Điểm đã trừ nền ngẫu nhiên rồi.
+    ///
+    /// 0.20 chứ không phải 0.30, và con số này đặt CÙNG LÚC với <see cref="HeSoSanChay"/> = 0.35
+    /// chứ không tách rời — xem bảng đo ở đó. Với cặp đó, trên bộ cnc2_den (10 ảnh c1 phải nhận,
+    /// 20 ảnh c2/c3 phải từ chối) khoảng trống là [0.000 … 0.321]; đặt ngưỡng vào giữa cho
+    /// biên an toàn 0.12 về phía nhận và 0.20 về phía từ chối. Để ở 0.30 vẫn đúng 30/30 nhưng
+    /// biên phía nhận chỉ còn 0.021 — một con hàng tương phản thấp hơn chút là trượt.
+    /// </summary>
+    public double DiemToiThieu = 0.20;
 
     /// <summary>Số kết quả tối đa trả về trên một ảnh.</summary>
     public int SoKetQua = 1;
@@ -138,25 +146,39 @@ public sealed class PmCfg
     /// Hệ số nhân vào sàn gradient lúc CHẠY. Sàn gốc là <c>MucPm.NguongThap</c> mà chính mức
     /// đó đã dùng lúc train, nên 1.0 nghĩa là "chạy đúng bằng tiêu chí lúc train".
     ///
-    /// Mặc định 0.5 chứ không phải 1.0, và con số này đo ra chứ không chọn cho đẹp.
+    /// Mặc định 0.35 chứ không phải 1.0, và con số này đo ra chứ không chọn cho đẹp.
     ///
     /// Ngưỡng train đo TRONG ROI của con hàng mẫu, nên con hàng nào tương phản thấp hơn mẫu là
-    /// cạnh của nó tụt xuống dưới ngưỡng đó ở mức mịn nhất. Đo trên bộ cnc2_den góc c1:
+    /// cạnh của nó tụt xuống dưới ngưỡng đó ở mức mịn nhất — điểm sập ĐÚNG ở L0 trong khi L1
+    /// vẫn còn 0.81.
     ///
-    ///   hệ số   bắt đúng (c1)   bắt NHẦM sang góc c3 (model không hề train)
-    ///   1.0     5/10            0/10      — 5 con chết ở đúng L0: L1 còn 0.706, L0 còn 0.000
-    ///   0.5     9/10            0/10      — mặc định
-    ///   0.4     10/10           5/10      — được thêm 1 con đúng, đổi lấy 5 con sai
-    ///   0.3     10/10           6/10
+    /// ĐO ĐẦY ĐỦ (2026-09-07), bộ cnc2_den: 10 ảnh c1 PHẢI NHẬN, 20 ảnh c2/c3 PHẢI TỪ CHỐI,
+    /// chạy trong khung tìm 475×608, dải 360°, DiemToiThieu = 0 để lấy điểm cao nhất:
+    ///
+    ///   hệ số   c1 thấp nhất   c2/c3 cao nhất   khoảng trống   ngưỡng giữa khoảng
+    ///   1.00    0.000          0.000            —              không tách được (5 con c1 ra 0)
+    ///   0.70    0.000          0.000            —              không tách được
+    ///   0.50    0.262          0.000            0.262          0.13
+    ///   0.35    0.321          0.000            0.321          0.16   ← rộng nhất, chọn cái này
+    ///   0.25    0.377          0.072            0.306          0.22
+    ///   0.15    0.360          0.259            0.100          0.31   ← bắt đầu nhận nhầm
+    ///
+    /// Kiểm chéo trên bộ khác để không chọn theo riêng một bộ: Almus_/Fix_Tape (4 ảnh, đều
+    /// phải nhận) ở 0.35 có điểm thấp nhất 0.798 — thừa sức, nên 0.35 không phải là con số
+    /// chỉ đúng cho SmartTech.
     ///
     /// Nới quá là mất khả năng TỪ CHỐI, mà tool này dùng để phân loại nên từ chối được mới là
-    /// thứ đáng giá. 0.5 là chỗ vừa giữ được 9/10 vừa loại sạch góc sai.
+    /// thứ đáng giá. 0.35 là chỗ khoảng trống rộng nhất giữa "phải nhận" và "phải từ chối".
+    ///
+    /// LƯU Ý QUAN TRỌNG: mọi con số trên chỉ đúng khi có KHOANH VÙNG TÌM KIẾM. Cùng bộ đó mà
+    /// quét cả ảnh thì c2/c3 lên tới 0.982 — chồng lấn hoàn toàn với c1 ở MỌI mức sàn, không
+    /// hệ số nào cứu được. Xem <see cref="PmModel.VungTim"/>.
     ///
     /// Đây là núm duy nhất còn lại tác động lên sàn; bản cũ dùng hạn ngạch phân vị 0.85 nên sàn
     /// đổi theo cả khung tìm kiếm (khoanh vùng hẹp lại là ngưỡng vọt từ 176 lên 211), vặn kiểu
     /// gì cũng không ổn định được.
     /// </summary>
-    public double HeSoSanChay = 0.5;
+    public double HeSoSanChay = 0.35;
 
     /// <summary>Nội suy parabol quanh đỉnh để ra toạ độ dưới pixel và góc dưới bước quét.</summary>
     public bool NoiSuyDuoiPixel = true;

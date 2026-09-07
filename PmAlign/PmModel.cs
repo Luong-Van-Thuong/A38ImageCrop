@@ -46,6 +46,27 @@ public sealed class PmModel
     public int Rong, Cao;
     public List<MucPm> Muc = [];
 
+    /// <summary>
+    /// VÙNG TÌM KIẾM đi kèm model — nơi TÂM của mẫu được phép nằm khi chạy.
+    ///
+    /// Lưu chung với model chứ không để người dùng khoanh lại mỗi lần, vì đo được nó quyết
+    /// định CẢ HAI thứ quan trọng nhất, không chỉ tốc độ:
+    ///
+    ///   • Tốc độ — bộ cnc2_den/c1, ảnh 5064², dải 360°: quét cả ảnh 199 ms/ảnh, còn quét
+    ///     trong khung 475×608 chỉ 55 ms/ảnh (max 73). Mốc 50 ms của Cognex nằm ở vế sau.
+    ///   • Khả năng TỪ CHỐI — cũng bộ đó, model học ở góc c1 rồi thả trên 20 ảnh c2/c3
+    ///     (không hề có mẫu này):
+    ///         quét cả ảnh  → điểm cao nhất trên c2/c3 là 0.982, CHỒNG LẤN hoàn toàn với
+    ///                        c1 (thấp nhất 0.376) ở mọi mức sàn — không có ngưỡng nào tách được.
+    ///         quét khung   → c2/c3 cao nhất 0.072 so với c1 thấp nhất 0.377, tách sạch.
+    ///     Lý do vật lý: hình dạng ấy CÓ THẬT ở chỗ khác trong ảnh. Không khoanh vùng thì
+    ///     không phải thuật toán yếu, mà là bài toán không có lời giải duy nhất.
+    ///
+    /// Rỗng (mặc định) nghĩa là model cũ chưa có trường này — khi đó giữ nguyên vùng người
+    /// dùng đang khoanh trên giao diện.
+    /// </summary>
+    public RectXoay VungTim;
+
     /// <summary>Góc mà ROI đã bị xoay lúc train — GỐC 0° của model.</summary>
     [JsonIgnore] public double GocRoiDo => Roi.GocDo;
 
@@ -82,6 +103,7 @@ public sealed class PmModel
     {
         public string TenAnhMau { get; set; } = "";
         public double[] Roi { get; set; } = [];
+        public double[] VungTim { get; set; } = [];
         public List<double[]> Mask { get; set; } = [];
         public int Rong { get; set; }
         public int Cao { get; set; }
@@ -99,6 +121,7 @@ public sealed class PmModel
         {
             TenAnhMau = TenAnhMau,
             Roi = Dep(Roi),
+            VungTim = Dep(VungTim),
             Mask = Mask.Select(Dep).ToList(),
             Rong = Rong,
             Cao = Cao,
@@ -140,6 +163,7 @@ public sealed class PmModel
         {
             TenAnhMau = dto.TenAnhMau,
             Roi = dto.Roi.Length == 5 ? Bung(dto.Roi) : new RectXoay(),
+            VungTim = dto.VungTim.Length == 5 ? Bung(dto.VungTim) : new RectXoay(),
             Mask = dto.Mask.Where(a => a.Length == 5).Select(Bung).ToList(),
             Rong = dto.Rong,
             Cao = dto.Cao,
