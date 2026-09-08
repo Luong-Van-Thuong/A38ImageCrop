@@ -51,6 +51,8 @@
         <Button x:Name="NutMoAnh"    Content="Mo anh…"  Click="MoAnh_Click"/>
         <Border Width="1" Background="#FF5A5A5A" Margin="6,2"/>
         <Button x:Name="NutTrain"    Content="Train"    Click="Train_Click"    Background="#FF2E7D32" Foreground="White"/>
+        <Button x:Name="NutTrainNhieu" Content="Train nhieu anh…" Click="TrainNhieu_Click" Background="#FF1B5E20" Foreground="White"
+                ToolTip="Train tren anh dang mo, roi bat model tu chung minh tren nhung anh khac va LOAI nhung diem khong tru duoc.&#10;Dung khi mot nua so diem model roi vao phan noi that doi theo goc nghieng / phan quang."/>
         <Button x:Name="NutRun"      Content="Run"      Click="Run_Click"      Background="#FF1565C0" Foreground="White"/>
         <Button x:Name="NutXemModel" Content="Xem model" Click="XemModel_Click"/>
         <CheckBox x:Name="CbDebug" Content="Debug" Margin="8,0,4,0" VerticalAlignment="Center"
@@ -157,6 +159,25 @@
             <TextBox   Grid.Row="5" Grid.Column="1" x:Name="THeSoSan" Style="{StaticResource O}"/>
           </Grid>
           <CheckBox x:Name="CbNoiSuy" Content="Noi suy duoi pixel / duoi buoc goc" IsChecked="True"/>
+
+          <TextBlock Style="{StaticResource Nhom}" Text="CHAM DIEM"/>
+          <CheckBox x:Name="CbNms" Content="NMS luc chay (bien manh 1px)" IsChecked="True"
+                    ToolTip="Dung Canny luc chay thay cho san do lon tran trui, dung cap nguong ma muc do da dung luc train.&#10;Train dung Canny ma Run chi dung san la hai dinh nghia 'bien' khac nhau — do la loi goc lam tool bat vao vung texture.&#10;PHAI di kem 'Dung sai' > 0 va PHAI de 'Bo chieu tuong phan' TAT: bat rieng NMS thi top-1 tut tu 31/34 xuong 24/34."/>
+          <CheckBox x:Name="CbBoDau" Content="Bo chieu tuong phan (|cos|)" IsChecked="False"
+                    ToolTip="TAT = tich vo huong CO DAU (mac dinh, giong IgnorePolarity=false cua Cognex).&#10;Bat len chi khi tuong phan that su DAO giua cac lo hang.&#10;Bo dau la khong phan biet duoc GO (vet xuoc, hai mep nguoc dau) voi BAC (canh vat, mot dau)."/>
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Text="Dung sai ghep bien (px)"
+                       ToolTip="Diem model duoc ghep voi bien GAN NHAT trong ban kinh nay, trong so giam tuyen tinh theo khoang cach.&#10;Tinh bang pixel CUA MUC dang xet, nen o muc tho no tu noi rong ra.&#10;Do duoc: 1, 2, 3 px deu cho top-1 34/34; 1 px cho bien rong nhat, 3 px cho thang diem cao nhat. 0 = tat."/>
+            <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TDungSai" Style="{StaticResource O}"/>
+            <TextBlock Grid.Row="1" Text="He so tru clutter"
+                       ToolTip="Diem xep hang = Diem − he so × Clutter. Clutter = ti le pixel bien trong dau chan model ma model KHONG giai thich duoc.&#10;Mac dinh 0: tren bo JeaYoung/Coil clutter cua tu the dung (0.70) va sai (0.79) chong lan qua nhieu nen khong doi duoc tam nao."/>
+            <TextBox   Grid.Row="1" Grid.Column="1" x:Name="THeSoClutter" Style="{StaticResource O}"/>
+            <TextBlock Grid.Row="2" Text="Clutter toi da (1 = tat)"/>
+            <TextBox   Grid.Row="2" Grid.Column="1" x:Name="TClutterMax" Style="{StaticResource O}"/>
+          </Grid>
+          <CheckBox x:Name="CbDoClutter" Content="Luon do va bao clutter" IsChecked="True"/>
           <CheckBox x:Name="CbVeDiem" Content="Ve diem model len ket qua" IsChecked="True" Checked="VeLai_Click" Unchecked="VeLai_Click"/>
 
           <TextBlock Style="{StaticResource Nhom}" Text="KET QUA"/>

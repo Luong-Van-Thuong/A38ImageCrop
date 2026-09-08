@@ -1,14 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
-    <!-- Giao dien PmAlign viet bang WPF. Van giu OutputType=Exe (khong phai WinExe)
-         de ba nhanh console cu (model / hoc / nghieng) con in ra duoc console. -->
+    <!-- Giao dien PmAlign viet bang WPF nen OutputType=WinExe: bam Run la ra thang cua so
+         app, KHONG kem cua so terminal den nao. Cac nhanh console cu (model / hoc / nghieng
+         / do-bien / tu-kiem / help) van in ra duoc: Program.MoConsoleNeuCan() bam vao console
+         cua shell da goi no (AttachConsole), khong co san thi tu mo mot cai (AllocConsole). -->
     <UseWPF>true</UseWPF>
     <StartupObject>A38.ImageCrop.Program</StartupObject>
   </PropertyGroup>

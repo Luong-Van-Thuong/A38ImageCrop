@@ -636,6 +636,88 @@ public partial class CuaSoPmAlign : Window
         finally { BatNut(true); _dbg?.XongLuot(); }
     }
 
+    /// <summary>
+    /// Train trên ảnh đang mở, rồi bắt model tự chứng minh trên những ảnh người dùng chọn
+    /// thêm và LOẠI những điểm không trụ được — xem <see cref="PmEngine.TrainOnDinh"/>.
+    ///
+    /// Dùng chung ROI / mask / vùng tìm đang khoanh trên màn hình, nên quy trình là: khoanh
+    /// như bình thường, rồi bấm nút này thay vì bấm Train.
+    /// </summary>
+    private async void TrainNhieu_Click(object sender, RoutedEventArgs e)
+    {
+        if (_anh == null) { Bao("Chua mo anh."); return; }
+        if (!_roi.HopLe) { Bao("Chua khoanh ROI mau.\n\nChon 'ROI mau' tren thanh cong cu roi keo chuot tren anh."); return; }
+        if (!_vungTim.HopLe)
+        {
+            Bao("Chua khoanh vung tim kiem.\n\nTrain nhieu anh phai DO model tren tung anh phu de biet " +
+                "tu the ma bo phieu, nen no can vung tim kiem giong het luc Run.");
+            return;
+        }
+
+        var hop = new OpenFileDialog
+        {
+            Title = "Chon cac anh PHU (khong gom anh mau dang mo)",
+            Filter = "Anh|*.bmp;*.png;*.jpg;*.jpeg;*.tif;*.tiff|Tat ca|*.*",
+            Multiselect = true,
+        };
+        if (hop.ShowDialog(this) != true || hop.FileNames.Length == 0) return;
+
+        DocCfgTuGiaoDien();
+        var anh = _anh;
+        var roi = _roi;
+        var mask = _mask.ToList();
+        var vt = _vungTim;
+        var cfg = _cfg.Sao();
+        var duongDan = hop.FileNames.Where(f => !string.Equals(f, _duongDanAnh, StringComparison.OrdinalIgnoreCase))
+                                    .ToList();
+        var nhat = new List<string>();
+
+        if (duongDan.Count == 0) { Bao("Chi chon dung anh mau — khong co anh phu nao de bo phieu."); return; }
+
+        BatNut(false);
+        _dbg?.BatDauLuot("TRAIN NHIEU " + Path.GetFileName(_duongDanAnh));
+        try
+        {
+            var dh = Stopwatch.StartNew();
+            var (model, mau) = await Task.Run(() =>
+            {
+                // Nạp ảnh phụ trong Task.Run rồi giải phóng ngay tại đây: 30 ảnh 15 MB là
+                // 450 MB Mat, giữ hết trong lúc chạy là không cần thiết.
+                var them = new List<(string, Mat)>();
+                try
+                {
+                    foreach (var d in duongDan)
+                    {
+                        var m = Cv2.ImDecode(File.ReadAllBytes(d), ImreadModes.Color);
+                        if (m.Empty()) { nhat.Add($"  BO QUA {Path.GetFileName(d)}: khong doc duoc."); m.Dispose(); continue; }
+                        them.Add((Path.GetFileName(d), m));
+                    }
+                    var mo = PmEngine.TrainOnDinh(anh, roi, mask, cfg, them, vt, s => nhat.Add(s));
+                    return (mo, PmEngine.CatMau(anh, roi));
+                }
+                finally { foreach (var (_, m) in them) m.Dispose(); }
+            });
+            dh.Stop();
+
+            _model = model;
+            _model.TenAnhMau = Path.GetFileName(_duongDanAnh);
+            _mauMau?.Dispose();
+            _mauMau = mau;
+            _ketQua = [];
+            DsKetQua.Items.Clear();
+
+            Ghi($"─── TRAIN NHIEU ANH  mau {_model.TenAnhMau} + {duongDan.Count} anh phu  " +
+                $"({dh.ElapsedMilliseconds} ms) ───");
+            foreach (var s in nhat) Ghi("  " + s);
+
+            TtThongTin.Text = $"Train nhieu anh xong: {_model.Muc.Sum(m => m.Diem.Length)} diem / " +
+                              $"{_model.Muc.Count} muc, {dh.ElapsedMilliseconds} ms";
+            VeLai();
+        }
+        catch (Exception ex) { Bao(ex.ToString()); }
+        finally { BatNut(true); _dbg?.XongLuot(); }
+    }
+
     private async void Run_Click(object sender, RoutedEventArgs e)
     {
         if (_anh == null) { Bao("Chua mo anh."); return; }
@@ -780,9 +862,23 @@ public partial class CuaSoPmAlign : Window
         // Lấy lại vùng tìm ngay lúc lưu: người dùng hay khoanh lại vùng SAU khi đã Train,
         // lưu theo bản lúc Train là lưu ra thứ họ không còn nhìn thấy trên màn hình.
         _model.VungTim = _vungTim;
+
+        // Vùng che thì KHÔNG lấy lại như vùng tìm: mặt nạ đã nướng vào model từ lúc Train
+        // (điểm trong đó đã bị loại, PmModel.MatNaChe đã chốt). Sửa hình che sau khi Train
+        // rồi lưu thì hình lưu ra không còn tả đúng model nữa — nên nói ra, đừng lưu lặng lẽ.
+        if (!CungMask(_mask, _model.Mask))
+            Ghi($"LUU Y: hinh che tren man hinh ({_mask.Count}) khac hinh che luc Train " +
+                $"({_model.Mask.Count}). Model luu ra giu ban LUC TRAIN — bam Train lai neu muon doi.");
+
         try { _model.Luu(hop.FileName); Ghi($"Da luu model: {hop.FileName}  (vung tim {(_vungTim.HopLe ? _vungTim.ToString() : "CHUA KHOANH")})"); }
         catch (Exception ex) { Bao(ex.Message); }
     }
+
+    private static bool CungMask(List<RectXoay> a, List<RectXoay> b) =>
+        a.Count == b.Count &&
+        a.Zip(b).All(p => p.First.Cx == p.Second.Cx && p.First.Cy == p.Second.Cy &&
+                          p.First.Rong == p.Second.Rong && p.First.Cao == p.Second.Cao &&
+                          p.First.GocDo == p.Second.GocDo);
 
     private void NapModel_Click(object sender, RoutedEventArgs e)
     {
@@ -808,6 +904,9 @@ public partial class CuaSoPmAlign : Window
 
             Ghi($"Da nap model: {hop.FileName}");
             Ghi($"  anh mau {_model.TenAnhMau}, mau {_model.Rong}x{_model.Cao}, ROI {_model.Roi}");
+            Ghi(_model.MatNaChe.Length > 0
+                ? $"  vung che {_model.TiLeChe:P1} cua mau ({_mask.Count} hinh ve tay) — clutter se bo qua vung nay"
+                : $"  khong co vung che ({_mask.Count} hinh ve tay)");
             Ghi(_model.VungTim.HopLe
                 ? $"  vung tim {_model.VungTim} (nap tu model)"
                 : "  model nay CHUA co vung tim — giu nguyen vung dang khoanh tren man hinh.");
@@ -852,6 +951,13 @@ public partial class CuaSoPmAlign : Window
         TSoKq.Text = _cfg.SoKetQua.ToString();
         THeSoSan.Text = _cfg.HeSoSanChay.ToString("F2", CultureInfo.InvariantCulture);
         CbNoiSuy.IsChecked = _cfg.NoiSuyDuoiPixel;
+
+        CbNms.IsChecked = _cfg.NmsLucChay;
+        CbBoDau.IsChecked = _cfg.BoQuaChieuTuongPhan;
+        TDungSai.Text = _cfg.DungSaiPx.ToString("F1", CultureInfo.InvariantCulture);
+        THeSoClutter.Text = _cfg.HeSoClutter.ToString("F2", CultureInfo.InvariantCulture);
+        TClutterMax.Text = _cfg.ClutterToiDa.ToString("F2", CultureInfo.InvariantCulture);
+        CbDoClutter.IsChecked = _cfg.LuonDoClutter;
     }
 
     private void DocCfgTuGiaoDien()
@@ -881,6 +987,24 @@ public partial class CuaSoPmAlign : Window
         _cfg.HeSoSanChay = Math.Clamp(Thuc(THeSoSan, _cfg.HeSoSanChay), 0.05, 5.0);
         _cfg.NoiSuyDuoiPixel = CbNoiSuy.IsChecked == true;
 
+        _cfg.NmsLucChay = CbNms.IsChecked == true;
+        _cfg.BoQuaChieuTuongPhan = CbBoDau.IsChecked == true;
+        _cfg.DungSaiPx = Math.Clamp(Thuc(TDungSai, _cfg.DungSaiPx), 0, 10);
+        _cfg.HeSoClutter = Math.Clamp(Thuc(THeSoClutter, _cfg.HeSoClutter), 0, 5);
+        _cfg.ClutterToiDa = Math.Clamp(Thuc(TClutterMax, _cfg.ClutterToiDa), 0, 1);
+        _cfg.LuonDoClutter = CbDoClutter.IsChecked == true;
+
+        // Ba nút chấm điểm là MỘT gói — bật lẻ từng cái là hỏng, và hỏng theo kiểu nhìn
+        // không ra. Đo được: NMS bật mà vẫn bỏ dấu thì top-1 tụt từ 31/34 xuống 24/34, tệ
+        // hơn cả khi tắt sạch. Nói to ngay lúc người dùng vừa vặn chứ đừng đợi tới lúc Run.
+        if (_cfg.NmsLucChay && _cfg.BoQuaChieuTuongPhan)
+            Ghi("  CANH BAO: bat NMS ma van 'Bo chieu tuong phan' — do duoc la TE HON ca ban cu " +
+                "(top-1 24/34 so voi 31/34). Bien manh di chi lam moi vet xuoc thanh hai duong " +
+                "sac net khop con ngot hon, khi khong co dau de phan biet go voi bac.");
+        if (_cfg.NmsLucChay && _cfg.DungSaiPx <= 0)
+            Ghi("  CANH BAO: bat NMS ma 'Dung sai ghep bien' = 0 — bien chi con manh 1 px, " +
+                "doc dung mot pixel thi dinh DUNG cung chet theo. Dat dung sai 1..3 px.");
+
         DoCfgRaGiaoDien();
     }
 
@@ -897,6 +1021,7 @@ public partial class CuaSoPmAlign : Window
     private void BatNut(bool bat)
     {
         NutTrain.IsEnabled = bat;
+        NutTrainNhieu.IsEnabled = bat;
         NutRun.IsEnabled = bat;
         NutMoAnh.IsEnabled = bat;
         NutNapModel.IsEnabled = bat;

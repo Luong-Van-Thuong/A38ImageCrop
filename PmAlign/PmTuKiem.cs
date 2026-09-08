@@ -15,8 +15,18 @@ public static class PmTuKiem
 {
     public static int Chay(string[] args)
     {
-        string anhDan = args.SkipWhile(a => a != "--tu-kiem").Skip(1).FirstOrDefault(a => !a.StartsWith('-'))
-                        ?? @"D:\Images_\V2\CoilAssy\CoilAssy\1240S\opencv\1B.bmp";
+        // Đường dẫn ảnh = tham số trần đầu tiên sau --tu-kiem mà KHÔNG phải giá trị của một
+        // cờ có tham số. Không lọc kiểu đó thì "--dung-sai 2" làm số 2 bị hiểu là tên ảnh.
+        string[] coCoThamSo = ["--dung-sai", "--only"];
+        string? anhDan = null;
+        for (int i = Array.IndexOf(args, "--tu-kiem") + 1; i > 0 && i < args.Length; i++)
+        {
+            if (args[i].StartsWith('-')) continue;
+            if (i > 0 && coCoThamSo.Contains(args[i - 1])) continue;
+            anhDan = args[i];
+            break;
+        }
+        anhDan ??= @"D:\Images_\V2\CoilAssy\CoilAssy\1240S\opencv\1B.bmp";
 
         if (!File.Exists(anhDan)) { Console.WriteLine($"Khong thay anh: {anhDan}"); return 1; }
         using var anh = Cv2.ImDecode(File.ReadAllBytes(anhDan), ImreadModes.Color);
@@ -51,13 +61,29 @@ public static class PmTuKiem
             }
         Console.WriteLine($"ROI mau: {roi}   do lech chuan {totNhat:F1}");
 
+        // Tự tạo thư mục: ImWrite vào thư mục không tồn tại KHÔNG ném lỗi, nó lặng lẽ trả
+        // false — bài tự kiểm mà nuốt lỗi thì mất luôn ý nghĩa. Trước đây thư mục này do
+        // nhánh --model sinh ra, nhánh đó đã bỏ nên phải tự lo.
+        const string raDan = "tu_kiem_out";
+        Directory.CreateDirectory(raDan);
         using (var mau = PmEngine.CatMau(anh, roi))
         {
-            Cv2.ImWrite("model_out/tukiem_mau.png", mau);
-            Console.WriteLine("  mieng mau ghi ra model_out/tukiem_mau.png");
+            string dan = Path.Combine(raDan, "tukiem_mau.png");
+            if (!Cv2.ImWrite(dan, mau)) Console.WriteLine($"  CANH BAO: khong ghi duoc {dan}");
+            else Console.WriteLine($"  mieng mau ghi ra {dan}");
         }
 
         var cfg = new PmCfg { SoMuc = 6, SoDiemToiDa = 500, GocTuDo = -20, GocDenDo = 20, DiemToiThieu = 0.05 };
+
+        // Cho phép vặn ba núm chấm điểm ngay trên dòng lệnh: bài này là bài duy nhất có CHÂN
+        // LÝ dưới pixel, nên nó mới là chỗ chọn được DungSaiPx — dung sai càng rộng thì điểm
+        // càng cao nhưng đỉnh càng bẹt, mà bẹt thì nội suy dưới pixel hết tác dụng.
+        int ids = Array.IndexOf(args, "--dung-sai");
+        if (ids >= 0 && ids + 1 < args.Length && double.TryParse(args[ids + 1], out double ds)) cfg.DungSaiPx = ds;
+        if (args.Contains("--khong-nms")) cfg.NmsLucChay = false;
+        if (args.Contains("--bo-dau")) cfg.BoQuaChieuTuongPhan = true;
+        Console.WriteLine($"Cham diem: NMS={cfg.NmsLucChay}, dung sai={cfg.DungSaiPx:F1}px, " +
+                          $"bo dau={cfg.BoQuaChieuTuongPhan}, san muc={cfg.SoDiemToiThieuMoiMuc}");
         var model = PmEngine.Train(anh, roi, [], cfg, s => Console.WriteLine("  " + s));
         Console.WriteLine();
 

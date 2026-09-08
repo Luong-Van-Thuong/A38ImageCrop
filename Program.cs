@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using A38.ImageCrop.PmAlign;
 
@@ -12,24 +13,30 @@ namespace A38.ImageCrop;
 /// </summary>
 public static class Config
 {
-    /// <summary>Đuôi ảnh chấp nhận khi <c>--model</c> trỏ vào một thư mục.</summary>
+    /// <summary>Đuôi ảnh chấp nhận khi một nhánh trỏ vào cả một thư mục (<c>--do-bien</c>).</summary>
     public static string[] ImageExtensions = { ".bmp", ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
-
-    /// <summary>Bật bởi <c>--debug-steps</c>. Giữ lại cho tương thích cờ cũ.</summary>
-    public static bool SaveDebugStepsInBatch = false;
 }
 
 public static class Program
 {
+    /// <summary>Các cờ mở một nhánh console; mọi cờ khác đều đi vào giao diện.</summary>
+    private static readonly string[] CoConsole = { "--do-bien", "--tu-kiem", "--help", "-h" };
+
     /// <summary>
-    /// Không có cờ nhánh nào thì mở GIAO DIỆN PmAlign — đây mới là đường chạy chính của
-    /// branch, ba cờ console cũ chỉ còn để chạy lại các bài đo cũ.
+    /// Không có cờ nhánh nào thì mở GIAO DIỆN PmAlign — đó là đường chạy chính. Hai cờ console
+    /// còn lại đều là THƯỚC ĐO, không phải tính năng: chúng trả lời "Train/Run chạy đúng chưa",
+    /// câu mà bấm nút trên giao diện không bao giờ trả lời được.
     ///
     /// [STAThread] là bắt buộc: WPF, hộp thoại mở file và clipboard đều đòi căn hộ đơn luồng.
     /// </summary>
     [STAThread]
     public static int Main(string[] args)
     {
+        // App là WinExe nên mặc định KHÔNG có console. Chỉ nhánh console mới cần một cái,
+        // đường chạy giao diện thì tuyệt đối không đụng vào — đó là chỗ cửa sổ terminal đen
+        // vẫn bám theo app trước đây.
+        if (args.Any(CoConsole.Contains)) MoConsoleNeuCan();
+
         Dbg.Enabled = !args.Contains("--no-debug");
         Dbg.ShowWindow = !args.Contains("--no-window");
         Dbg.Pause = !args.Contains("--no-pause");
@@ -38,16 +45,8 @@ public static class Program
         int i = Array.IndexOf(args, "--only");
         if (i >= 0 && i + 1 < args.Length) Dbg.Filter = args[i + 1];
 
-        if (args.Contains("--debug-steps")) Config.SaveDebugStepsInBatch = true;
-
-        // Bước 1a của tool dò mẫu: chỉ trích model từ ảnh master rồi vẽ ra.
-        if (args.Contains("--model")) return PatModel.ChayTrichModel(args);
-
-        // Bài học dò mẫu bản thô: chạy từng bước một để hiểu shape-based từ gốc.
-        if (args.Contains("--hoc")) return HocDoMau.Chay(args);
-
-        // Bài từ MLCC có nghiêng lên không: đo góc alpha bằng dò mẫu theo hình dạng.
-        if (args.Contains("--nghieng")) return YeaJoungCheckCoiNghieng.Chay(args);
+        // Do bien: chay mot model tren ca thu muc voi nhieu cau hinh cham diem, ra CSV + anh ghep.
+        if (args.Contains("--do-bien")) return PmDoBien.Chay(args);
 
         // Tu kiem engine bang chan ly biet truoc: xoay/doi anh mot luong da biet roi bat Run tim lai.
         if (args.Contains("--tu-kiem")) return PmTuKiem.Chay(args);
@@ -57,9 +56,37 @@ public static class Program
         return MoGiaoDien(args);
     }
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AttachConsole(uint dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AllocConsole();
+
+    private const uint ATTACH_PARENT_PROCESS = 0xFFFFFFFF;
+
+    /// <summary>
+    /// Móc process vào một console để Console.WriteLine có chỗ chảy ra.
+    ///
+    /// Gọi từ cmd/PowerShell thì bám luôn vào console của shell đó (AttachConsole) — chữ hiện
+    /// ngay trong cửa sổ đang gõ, không đẻ thêm cửa sổ nào. Bấm đúp từ Explorer thì không có
+    /// console cha, lúc đó mới tự mở một cái (AllocConsole).
+    ///
+    /// Phải SetOut/SetError lại: Console của .NET đã bị buộc vào thiết bị null từ lúc process
+    /// khởi động ở chế độ WinExe, không tự nhận handle mới. Mở lại standard handle cũng chính
+    /// là đường giữ nguyên hành vi khi người dùng chuyển hướng ra file (<c>&gt; out.txt</c>).
+    /// </summary>
+    private static void MoConsoleNeuCan()
+    {
+        if (!AttachConsole(ATTACH_PARENT_PROCESS) && !AllocConsole()) return;
+
+        Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+        Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
+        Console.SetIn(new StreamReader(Console.OpenStandardInput()));
+    }
+
     private static int MoGiaoDien(string[] args)
     {
-        // GUI mac dinh TAT debug. Ba nhanh console cu chay mot lan roi thoat nen bat debug
+        // GUI mac dinh TAT debug. Nhanh console chay mot lan roi thoat nen bat debug san
         // la tien; con GUI thi moi lan bam Run lai di qua ~21 lan Dbg.Show, moi lan ghi mot
         // file PNG (26 giay cho mot lan Run) roi ket o Cv2.WaitKey(0) trong Task.Run - cua so
         // HighGUI moc ra sau cua so WPF nen nhin y het treo.
@@ -94,10 +121,16 @@ public static class Program
                                     -> khoanh ROI mau va xoay 360 do -> Train -> Run
               <duong-dan-anh>       Nhu tren, mo san tam anh do
 
-            Ba nhanh console cu:
-              --model [duong-dan]   Trich model tu anh master roi ve ra model_out\
-              --hoc [1..4]          Bai hoc tung buoc, ket qua ra hoc_out\
-              --nghieng             Do goc alpha ca bo anh OK/NG, ket qua ra nghieng_out\
+            Hai nhanh DO LUONG (khong phai tinh nang — de kiem engine):
+              --tu-kiem [anh]       Tu kiem bang chan ly biet truoc (xoay/doi anh mot luong da biet)
+                                    them --dung-sai <px> / --khong-nms / --bo-dau de van tung num
+              --do-bien <thu-muc> <model.pmm.json>
+                                    Chay mot model tren ca thu muc voi nhieu cau hinh cham diem,
+                                    ra CSV + anh ghep. Do BIEN giua dinh dung va dinh sai.
+                    --vt cx,cy,w,h  khung hep de dung chan ly
+                    --bo a.bmp,...  loai vai anh khoi thong ke
+                    --on-dinh       train lai co loc on dinh roi do lai
+                    --ra <thu-muc>  noi ghi ket qua
 
             Co debug dung chung:
               --no-window   Khong bat cua so, chi ghi anh ra dia

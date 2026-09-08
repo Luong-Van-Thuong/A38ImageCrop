@@ -1,4 +1,5 @@
 using OpenCvSharp;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace A38.ImageCrop.PmAlign;
@@ -6,10 +7,10 @@ namespace A38.ImageCrop.PmAlign;
 /// <summary>
 /// Engine dò mẫu theo hình dạng — MỘT bộ code duy nhất cho cả Train lẫn Run.
 ///
-/// Đây là chỗ sửa quan trọng nhất so với branch cũ: <c>PatModel.TrichMotMuc</c> và
-/// <c>YeaJoungCheckCoiNghieng.TrichMotMuc</c> là hai bản sao đã phân kỳ (2000 điểm vs 900,
-/// có/không don-care). Train một đằng mà Run một nẻo thì điểm số không còn nghĩa gì.
-/// Mọi thứ dưới đây dùng chung một hàm trích và một hàm chấm điểm.
+/// Chữ "MỘT bộ code" là bài học đắt nhất của branch: bản cũ có HAI hàm trích điểm chép ra
+/// từ nhau rồi phân kỳ (2000 điểm với 900, một bên có don-care một bên không). Train một
+/// đằng mà Run một nẻo thì điểm số không còn nghĩa gì — chấm 0.9 hay 0.3 đều không nói lên
+/// điều gì về con hàng. Mọi thứ dưới đây dùng chung một hàm trích và một hàm chấm điểm.
 ///
 /// QUY ƯỚC GÓC lấy nguyên của <see cref="RectXoay"/>: y hướng xuống, góc dương quay ngược
 /// chiều kim đồng hồ trên màn hình, R(θ) = [[cos, sin], [−sin, cos]].
@@ -88,7 +89,16 @@ public static class PmEngine
             log?.Invoke($"CANH BAO: vung don-care phu {tiLeChe:P0} cua mau — soi anh " +
                         $"'train 3' xem no co dang an vao canh can train khong.");
 
+        // Cất luôn mặt nạ che ở toạ độ mẫu. Không phải để train lại — train xong là xong —
+        // mà để lúc Run clutter biết bỏ qua vùng này (xem PmModel.MatNaChe).
         var model = new PmModel { Roi = roi, Mask = dsMask, Rong = w, Cao = h };
+        if (tiLeChe > 0)
+        {
+            cheMau.GetArray(out byte[] aChe);
+            var bit = new byte[w * h];
+            for (int i = 0; i < bit.Length && i < aChe.Length; i++) bit[i] = (byte)(aChe[i] != 0 ? 1 : 0);
+            model.MatNaChe = bit;
+        }
 
         for (int muc = 0; muc < Math.Max(1, cfg.SoMuc); muc++)
         {
@@ -111,6 +121,123 @@ public static class PmEngine
         }
 
         return model;
+    }
+
+    /// <summary>
+    /// TRAIN NHIỀU ẢNH — train như thường trên ảnh mẫu, rồi bắt model tự chứng minh trên
+    /// những ảnh khác và LOẠI những điểm không trụ được.
+    ///
+    /// Vì sao cần: model JeaYoung/Coil có 339 điểm ở L0 cho một chu vi 546 px, tức HƠN NỬA
+    /// số điểm nằm trong lòng con hàng — trên các vệt phản quang đổi hoàn toàn theo góc
+    /// nghiêng. Những điểm ấy hại cả hai đầu: chúng kéo điểm của tư thế ĐÚNG xuống (vì trên
+    /// ảnh khác chúng không còn ở đó), và chúng dễ ăn may trên texture y như mọi điểm khác.
+    ///
+    /// Không cắt theo hình học (kiểu "chỉ giữ silhouette") vì cắt thế cũng sai: con hàng chỉ
+    /// còn đường bao thì đúng bằng "một thanh sáng trên nền tối", tức hồ sơ của một vết
+    /// xước. Cắt theo ĐO ĐƯỢC: điểm nào có mặt ở đủ nhiều ảnh thì giữ.
+    ///
+    /// Cách bỏ phiếu: dò model gốc trên từng ảnh phụ để lấy tư thế, rồi hỏi TỪNG điểm một
+    /// "ở tư thế này mày có trụ được không". Không cần dán nhãn tay — chân lý là chính tư
+    /// thế mà model gốc tìm ra, và nếu tư thế đó sai thì phiếu chỉ loãng chứ không lệch.
+    /// </summary>
+    public static PmModel TrainOnDinh(Mat anhMau, RectXoay roi, IEnumerable<RectXoay> mask, PmCfg cfg,
+                                      IReadOnlyList<(string Ten, Mat Anh)> anhThem, RectXoay vungTim,
+                                      Action<string>? log = null)
+    {
+        var model = Train(anhMau, roi, mask, cfg, log);
+        model.VungTim = vungTim;
+        if (anhThem == null || anhThem.Count == 0) return model;
+
+        var phieu = model.Muc.Select(m => new int[m.Diem.Length]).ToArray();
+
+        // Dò trên ảnh phụ phải NHẬN HẾT: ở đây mục đích là tìm con hàng để bỏ phiếu, không
+        // phải phân loại. Để nguyên ngưỡng và clutter là tự loại mất chính những ảnh khó —
+        // tức loại đúng những ảnh mang nhiều thông tin nhất.
+        var cfgDo = cfg.Sao();
+        cfgDo.DiemToiThieu = 0;
+        cfgDo.SoKetQua = 1;
+        cfgDo.HeSoClutter = 0;
+        cfgDo.ClutterToiDa = 1.0;
+
+        int soDung = 0;
+        foreach (var (ten, anh) in anhThem)
+        {
+            var kq = Run(anh, model, vungTim, cfgDo);
+            if (kq.Count == 0) { log?.Invoke($"  {ten}: KHONG TIM THAY — bo qua anh nay."); continue; }
+
+            var k = kq[0];
+            BoPhieu(anh, model, k.X, k.Y, k.GocMauDo, cfgDo, phieu);
+            soDung++;
+            log?.Invoke($"  {ten}: diem {k.Diem:F3}, clutter {k.Clutter:F3}, " +
+                        $"tai ({k.X:F1}, {k.Y:F1}) goc {k.GocDo:F2}");
+        }
+
+        if (soDung == 0)
+        {
+            log?.Invoke("CANH BAO: khong do duoc anh phu nao — giu nguyen model mot anh.");
+            return model;
+        }
+
+        int can = Math.Max(1, (int)Math.Ceiling(cfg.TiLeOnDinh * soDung));
+        log?.Invoke($"Loc on dinh: {soDung} anh phu, giu diem tru duoc o >= {can} anh " +
+                    $"(nguong tru {cfg.NguongTruDiem:F2}).");
+
+        for (int i = 0; i < model.Muc.Count; i++)
+        {
+            var mm = model.Muc[i];
+            var giu = new List<DiemModel>();
+            for (int j = 0; j < mm.Diem.Length; j++)
+                if (phieu[i][j] >= can) giu.Add(mm.Diem[j]);
+
+            // Lọc mà còn quá ít điểm thì mức đó thành vô dụng, và tệ hơn là KHÔNG AI BIẾT
+            // cho tới lúc Run trả rỗng. Thà giữ nguyên mức đó và nói to.
+            int san = Math.Max(8, cfg.SoDiemToiThieuMoiMuc);
+            if (giu.Count < san)
+            {
+                log?.Invoke($"  L{i}: {mm.Diem.Length} -> {giu.Count} diem — QUA IT (< {san}), " +
+                            $"GIU NGUYEN muc nay. Ha TiLeOnDinh hoac NguongTruDiem neu muon loc that.");
+                continue;
+            }
+
+            log?.Invoke($"  L{i}: {mm.Diem.Length} -> {giu.Count} diem " +
+                        $"({giu.Count / (double)mm.Diem.Length:P0} tru lai)");
+            mm.Diem = [.. giu];
+            TinhLaiHinhHoc(mm);
+        }
+
+        return model;
+    }
+
+    /// <summary>
+    /// Ở một tư thế đã biết, hỏi từng điểm model "mày có trụ được trên ảnh này không" và
+    /// cộng phiếu. Dùng đúng <see cref="DongGop"/> mà lúc chấm điểm dùng, nên tiêu chí bỏ
+    /// phiếu và tiêu chí cho điểm không thể phân kỳ.
+    /// </summary>
+    private static void BoPhieu(Mat anh, PmModel model, double x, double y, double gocMauDo,
+                                PmCfg cfg, int[][] phieu)
+    {
+        int le = (int)Math.Ceiling(model.Muc[0].BanKinh) + 8;
+        var bao = NoiRong(new Rect((int)Math.Round(x), (int)Math.Round(y), 1, 1), le, anh.Size());
+        int boi = 1 << Math.Max(0, Math.Min(6, model.Muc.Count - 1));
+        bao = LamTronBoi(bao, boi, anh.Size());
+        if (bao.Width < 8 || bao.Height < 8) return;
+
+        using var catMau = new Mat(anh, bao);
+        using var cat = ToXam(catMau);
+
+        double r = gocMauDo * Math.PI / 180.0, c = Math.Cos(r), s = Math.Sin(r);
+
+        for (int i = 0; i < model.Muc.Count; i++)
+        {
+            var mm = model.Muc[i];
+            if (mm.Diem.Length == 0) continue;
+
+            var am = ChuanBiMucAnh(cat, mm, cfg);
+            double cx = (x - bao.X) * mm.TiLe, cy = (y - bao.Y) * mm.TiLe;
+
+            for (int j = 0; j < mm.Diem.Length; j++)
+                if (DongGop(am, in mm.Diem[j], cx, cy, c, s) >= cfg.NguongTruDiem) phieu[i][j]++;
+        }
     }
 
     /// <summary>Cắt ra đúng miếng ảnh MÀU mà model đã học, để soi bằng mắt.</summary>
@@ -192,14 +319,14 @@ public static class PmEngine
         int cotLuoi = (w + oLuoi - 1) / oLuoi;
         var daChiem = new bool[cotLuoi * ((h + oLuoi - 1) / oLuoi)];
 
-        // Trần là SoDiemToiDa đúng nghĩa số điểm. Bản cũ ở PatModel.cs viết
+        // Trần là SoDiemToiDa đúng nghĩa SỐ ĐIỂM. Bản cũ viết
         //     soDiemMax = ceil(sqrt(w*h / SoDiemToiDa))
-        // nên với mẫu 200x200 và SoDiemToiDa = 2000 thì trần thật chỉ là 5 điểm.
+        // nên với mẫu 200x200 và SoDiemToiDa = 2000 thì trần thật chỉ là 5 điểm — đặt tham
+        // số 2000 mà nhận về 5, đó là kiểu lỗi không bao giờ ném exception.
         int tran = Math.Max(8, cfg.SoDiemToiDa);
 
         float cx = w / 2f, cy = h / 2f;
         var diem = new List<DiemModel>();
-        float banKinh = 0;
 
         foreach (var (idx, mag) in ungVien)
         {
@@ -210,33 +337,43 @@ public static class PmEngine
             daChiem[o] = true;
 
             float gx = aDx[idx] / mag, gy = aDy[idx] / mag;
-            float px = x - cx, py = y - cy;
-            diem.Add(new DiemModel(px, py, gx, gy));
-            banKinh = MathF.Max(banKinh, MathF.Sqrt(px * px + py * py));
+            diem.Add(new DiemModel(x - cx, y - cy, gx, gy));
         }
 
-        double tongBinh = 0;
-        foreach (var d in diem)
-        {
-            double don = d.X * d.Gy - d.Y * d.Gx;
-            tongBinh += don * don;
-        }
-        double donBay = diem.Count == 0 ? 0 : Math.Sqrt(tongBinh / diem.Count) * Math.PI / 180.0;
-
-        return new MucPm
+        var mp = new MucPm
         {
             Muc = muc,
             TiLe = tiLe,
             Rong = w,
             Cao = h,
             Diem = [.. diem],
-            BanKinh = banKinh,
-            DonBayXoay = donBay,
             NguongThap = thap,
             NguongCao = cao,
             SoPixelBien = Cv2.CountNonZero(bien),
             SoUngVien = ungVien.Count,
         };
+        TinhLaiHinhHoc(mp);
+        return mp;
+    }
+
+    /// <summary>
+    /// Tính lại bán kính và đòn bẩy xoay TỪ tập điểm hiện có.
+    ///
+    /// Có hàm riêng vì train-nhiều-ảnh loại bớt điểm sau khi đã trích: bỏ điểm mà quên tính
+    /// lại hai con số này thì bước góc và lề cắt patch vẫn theo model cũ — sai âm thầm.
+    /// </summary>
+    private static void TinhLaiHinhHoc(MucPm mp)
+    {
+        float banKinh = 0;
+        double tongBinh = 0;
+        foreach (var d in mp.Diem)
+        {
+            banKinh = MathF.Max(banKinh, MathF.Sqrt(d.X * d.X + d.Y * d.Y));
+            double don = d.X * d.Gy - d.Y * d.Gx;
+            tongBinh += don * don;
+        }
+        mp.BanKinh = banKinh;
+        mp.DonBayXoay = mp.Diem.Length == 0 ? 0 : Math.Sqrt(tongBinh / mp.Diem.Length) * Math.PI / 180.0;
     }
 
     /// <summary>
@@ -286,7 +423,35 @@ public static class PmEngine
     {
         public int W, H;
         public int X0, Y0, Wc, Hc;
+
+        /// <summary>
+        /// Hướng của biên GẦN NHẤT, đã nhân trọng số theo khoảng cách tới biên đó.
+        /// Khi <see cref="PmCfg.DungSaiPx"/> = 0 thì đây lại đúng là hướng gradient của
+        /// chính pixel đó, độ dài 1 — tức hành vi cũ.
+        /// </summary>
         public float[] Ngx = [], Ngy = [];
+
+        /// <summary>1 = pixel này CHÍNH LÀ biên. Dùng để đếm clutter, không dùng khi chấm điểm.</summary>
+        public byte[] LaBien = [];
+
+        /// <summary>Tổng số pixel biên trong cửa sổ.</summary>
+        public int SoBien;
+
+        /// <summary>Lấy |tích vô hướng| thay vì tích có dấu — xem PmCfg.BoQuaChieuTuongPhan.</summary>
+        public bool BoDau;
+
+        /// <summary>Ngx/Ngy đã có trọng số ⇒ nội suy xong KHÔNG được chuẩn hoá lại về độ dài 1.</summary>
+        public bool CoTrongSo;
+
+        /// <summary>
+        /// Điểm mà một tư thế ngẫu nhiên đạt được — thứ phải trừ đi để con số nói lên gì đó.
+        ///
+        /// Chỉ bằng 2/π ở ĐÚNG đường chạy cũ (bỏ dấu + không NMS + không dung sai), vì hằng
+        /// số ấy chỉ đúng khi mọi pixel đều có hướng. Có NMS thì phần lớn điểm model rơi vào
+        /// chỗ trống và đóng góp 0, có dung sai thì đóng góp còn bị nhân w &lt; 1 — trừ 0.637
+        /// trong hai trường hợp đó là trừ oan, mọi thứ về 0 sạch. Khi ấy nền đúng là 0.
+        /// </summary>
+        public double Nen;
     }
 
     /// <summary>
@@ -484,8 +649,17 @@ public static class PmEngine
         var a0 = LayMuc(0);
         var m0 = model.Muc[0];
         var ra = new List<KetQuaPm>();
-        int ngoaiVung = 0, duoiNguong = 0;
+        int ngoaiVung = 0, duoiNguong = 0, quaClutter = 0;
         double caoNhatBiLoai = 0;
+
+        // Chỉ dựng lưới khi thật sự có ai dùng tới clutter — dựng thừa là cấp phát thừa.
+        bool canClutter = cfg.HeSoClutter > 0 || cfg.ClutterToiDa < 1.0 || cfg.LuonDoClutter || Dbg.Enabled;
+        var luoi = canClutter
+            ? DungLuoiModel(m0, cfg.DungSaiPx, cfg.CheKhongTinhClutter ? model.MatNaChe : [])
+            : null;
+        if (luoi is { SoBoQua: > 0 })
+            log?.Invoke($"  Clutter bo qua vung che: {luoi.SoBoQua} / {luoi.W * luoi.H} o cua dau chan " +
+                        $"({(double)luoi.SoBoQua / (luoi.W * luoi.H):P1}).");
 
         foreach (var u in giu)
         {
@@ -497,6 +671,14 @@ public static class PmEngine
             if (!vt.Chua(gx, gy)) { ngoaiVung++; continue; }   // tâm phải nằm trong vùng tìm kiếm
             if (d < cfg.DiemToiThieu) { duoiNguong++; caoNhatBiLoai = Math.Max(caoNhatBiLoai, d); continue; }
 
+            double clutter = 0;
+            if (luoi != null)
+            {
+                double rg = g * Math.PI / 180.0;
+                clutter = DoClutter(a0, luoi, x, y, Math.Cos(rg), Math.Sin(rg));
+                if (clutter > cfg.ClutterToiDa) { quaClutter++; continue; }
+            }
+
             ra.Add(new KetQuaPm
             {
                 X = gx,
@@ -504,17 +686,24 @@ public static class PmEngine
                 GocMauDo = g,
                 GocDo = ChuanHoaGocQuanh(g - phi, cfg),
                 Diem = d,
+                Clutter = clutter,
+                DiemXep = d - cfg.HeSoClutter * clutter,
             });
         }
 
-        if (ra.Count == 0 && (ngoaiVung > 0 || duoiNguong > 0))
+        if (ra.Count == 0 && (ngoaiVung > 0 || duoiNguong > 0 || quaClutter > 0))
             log?.Invoke($"Loai het: {ngoaiVung} tu the co tam ngoai vung tim kiem, " +
-                        $"{duoiNguong} duoi diem toi thieu (cao nhat trong so do {caoNhatBiLoai:F3}).");
+                        $"{duoiNguong} duoi diem toi thieu (cao nhat trong so do {caoNhatBiLoai:F3}), " +
+                        $"{quaClutter} vuot clutter toi da {cfg.ClutterToiDa:F2}.");
 
         // Gộp trùng lần cuối CHỈ theo vị trí: đến đây các giả thuyết đã hội tụ, hai tư thế
         // cùng chỗ là cùng một vật chứ không còn là hai giả thuyết góc nữa.
-        var loc = LocTrung(ra.OrderByDescending(k => k.Diem)
-                             .Select(k => (k.Diem, k.X, k.Y, k.GocMauDo)).ToList(),
+        //
+        // Xếp theo DiemXep (đã trừ clutter) chứ không theo Diem: nếu clutter không được phép
+        // đổi thứ hạng thì nó chỉ là một con số trang trí. Với HeSoClutter = 0 thì hai cái
+        // bằng nhau, nên mặc định vẫn là hành vi cũ.
+        var loc = LocTrung(ra.OrderByDescending(k => k.DiemXep)
+                             .Select(k => (k.DiemXep, k.X, k.Y, k.GocMauDo)).ToList(),
                            Math.Max(2.0, model.Muc[0].BanKinh * 0.3), 0);
 
         log?.Invoke($"Tong {dhTong.ElapsedMilliseconds} ms " +
@@ -525,6 +714,109 @@ public static class PmEngine
         return loc.Take(Math.Max(1, cfg.SoKetQua))
                   .Select(u => ra.First(k => k.X == u.X && k.Y == u.Y && k.GocMauDo == u.Goc))
                   .ToList();
+    }
+
+    /// <summary>
+    /// Lưới "chỗ này model CÓ điểm không", trong hệ toạ độ MẪU đã dựng thẳng, đã nới sẵn
+    /// bán kính dung sai. Dựng một lần cho mỗi lần Run, tra O(1) cho từng pixel biên.
+    /// </summary>
+    private sealed class LuoiModel
+    {
+        public int W, H, Ox, Oy;
+        public byte[] Co = [];
+
+        /// <summary>1 = pixel don't-care, clutter không được đếm ở đây. Rỗng = không che gì.</summary>
+        public byte[] BoQua = [];
+
+        /// <summary>Số ô don't-care, chỉ để báo ra.</summary>
+        public long SoBoQua;
+    }
+
+    /// <param name="che">
+    /// Mặt nạ che L0 (<c>mm.Rong × mm.Cao</c>, 1 = don't-care), hoặc rỗng. Được đưa vào lưới
+    /// bằng ĐÚNG phép chiếu mà điểm model dùng trong <see cref="TrichMotMuc"/> — X = x − w/2,
+    /// Y = y − h/2 — nên mặt nạ và điểm nằm khít lên nhau, không lệch nửa pixel ở kích thước lẻ.
+    /// </param>
+    private static LuoiModel DungLuoiModel(MucPm mm, double tol, byte[] che)
+    {
+        int t = (int)Math.Ceiling(Math.Max(1.0, tol));
+        int w = mm.Rong + 2 * t + 2, h = mm.Cao + 2 * t + 2;
+        var l = new LuoiModel { W = w, H = h, Ox = w / 2, Oy = h / 2, Co = new byte[w * h] };
+
+        if (che.Length == (long)mm.Rong * mm.Cao && mm.Rong > 0 && mm.Cao > 0)
+        {
+            l.BoQua = new byte[w * h];
+            float cx = mm.Rong / 2f, cy = mm.Cao / 2f;
+            for (int y = 0; y < mm.Cao; y++)
+                for (int x = 0; x < mm.Rong; x++)
+                {
+                    if (che[y * mm.Rong + x] == 0) continue;
+                    int mx = (int)Math.Round(x - cx) + l.Ox, my = (int)Math.Round(y - cy) + l.Oy;
+                    if (mx < 0 || my < 0 || mx >= w || my >= h) continue;
+                    if (l.BoQua[my * w + mx] == 0) { l.BoQua[my * w + mx] = 1; l.SoBoQua++; }
+                }
+        }
+
+        foreach (var p in mm.Diem)
+        {
+            int cx = (int)Math.Round(p.X) + l.Ox, cy = (int)Math.Round(p.Y) + l.Oy;
+            for (int dy = -t; dy <= t; dy++)
+                for (int dx = -t; dx <= t; dx++)
+                {
+                    if (dx * dx + dy * dy > t * t) continue;
+                    int x = cx + dx, y = cy + dy;
+                    if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                    l.Co[y * w + x] = 1;
+                }
+        }
+        return l;
+    }
+
+    /// <summary>
+    /// CLUTTER — tỉ lệ pixel biên nằm trong dấu chân của model mà KHÔNG điểm model nào giải
+    /// thích được. 0 = vùng này chỉ có đúng những cạnh mà model biết; 1 = toàn cạnh lạ.
+    ///
+    /// Vì sao cần: điểm khớp một mình là COVERAGE, nó chỉ trả lời "model tìm thấy cạnh của
+    /// nó chưa" chứ không phân biệt được "tìm thấy đủ cạnh của tôi" với "tìm thấy đủ cạnh
+    /// của tôi CỘNG THÊM 500 cạnh khác". Trên nền thép xước thì vế sau đầy rẫy, và đó đúng
+    /// là chỗ tool bắt sai. Cognex báo Score và Clutter tách riêng cũng vì lẽ đó.
+    ///
+    /// Chỉ tính ở L0 và chỉ cho các ứng viên sống sót — cỡ 40 × 40k pixel, không đáng kể so
+    /// với phần quét.
+    /// </summary>
+    private static double DoClutter(MucAnh am, LuoiModel luoi, double cx, double cy, double c, double s)
+    {
+        if (am.LaBien.Length == 0 || luoi.Co.Length == 0) return 0;
+
+        // Hộp bao của dấu chân ở góc xoay bất kỳ: nửa đường chéo của lưới.
+        double r = 0.5 * Math.Sqrt((double)luoi.W * luoi.W + (double)luoi.H * luoi.H) + 1;
+        int x0 = Math.Max(0, (int)Math.Floor(cx - r) - am.X0);
+        int y0 = Math.Max(0, (int)Math.Floor(cy - r) - am.Y0);
+        int x1 = Math.Min(am.Wc - 1, (int)Math.Ceiling(cx + r) - am.X0);
+        int y1 = Math.Min(am.Hc - 1, (int)Math.Ceiling(cy + r) - am.Y0);
+
+        long trong = 0, giaiThich = 0;
+        for (int y = y0; y <= y1; y++)
+            for (int x = x0; x <= x1; x++)
+            {
+                if (am.LaBien[y * am.Wc + x] == 0) continue;
+
+                // Nghịch đảo của phép đặt model: px = cx + X·c + Y·s, py = cy − X·s + Y·c.
+                double dx = x + am.X0 - cx, dy = y + am.Y0 - cy;
+                int mx = (int)Math.Round(dx * c - dy * s) + luoi.Ox;
+                int my = (int)Math.Round(dx * s + dy * c) + luoi.Oy;
+                if (mx < 0 || my < 0 || mx >= luoi.W || my >= luoi.H) continue;   // ngoài dấu chân
+
+                // DON'T-CARE: không vào tử số mà cũng không vào mẫu số. Đếm vào mẫu số rồi
+                // coi là "không giải thích được" chính là biến vùng mình cố tình bỏ qua thành
+                // bằng chứng buộc tội, phạt đều tay cả những tư thế đúng.
+                if (luoi.BoQua.Length > 0 && luoi.BoQua[my * luoi.W + mx] != 0) continue;
+
+                trong++;
+                if (luoi.Co[my * luoi.W + mx] != 0) giaiThich++;
+            }
+
+        return trong == 0 ? 0 : (double)(trong - giaiThich) / trong;
     }
 
     /// <summary>Đưa góc về đúng dải mà người dùng đã đặt, thay vì để nó nhảy ra ngoài vì cộng trừ 360.</summary>
@@ -572,37 +864,48 @@ public static class PmEngine
     }
 
     /// <summary>
-    /// Điểm khớp của một tư thế. Lấy TRỊ TUYỆT ĐỐI của tích vô hướng nên đảo tương phản vẫn
-    /// ăn điểm. Điểm rơi ra ngoài ảnh tính 0 chứ không bỏ, để tư thế thò ra ngoài biên không
-    /// được điểm cao giả nhờ ít điểm.
+    /// Điểm khớp của một tư thế. Điểm rơi ra ngoài ảnh tính 0 chứ không bỏ, để tư thế thò ra
+    /// ngoài biên không được điểm cao giả nhờ ít điểm.
     ///
-    /// Trừ đi mức ngẫu nhiên 2/π ≈ 0.637 rồi kéo giãn về [0,1]: hai hướng ngẫu nhiên cho
-    /// E[|cos|] = 2/π, để nguyên thì mọi tư thế đều ra ~0.7 và con số đó không nói lên gì.
+    /// Tích vô hướng CÓ DẤU (trừ khi <see cref="PmCfg.BoQuaChieuTuongPhan"/>): một vết xước
+    /// là gờ nên hai mép nó có gradient ngược dấu, còn cạnh vật là bậc nên chỉ một dấu — bỏ
+    /// dấu là tự xoá mất chỗ phân biệt ấy. Chi tiết ở PmCfg.BoQuaChieuTuongPhan.
+    ///
+    /// Mức nền phải trừ đi nằm ở <see cref="MucAnh.Nen"/>, không còn là hằng 2/π viết cứng:
+    /// hằng ấy chỉ đúng cho đúng một cấu hình (bỏ dấu, không NMS, không dung sai).
     /// </summary>
     private static double Cham(MucAnh am, DiemModel[] diem, double cx, double cy, double c, double s)
     {
         if (diem.Length == 0) return 0;
         double tong = 0;
-        for (int i = 0; i < diem.Length; i++)
-        {
-            var p = diem[i];
-            double px = cx + p.X * c + p.Y * s;
-            double py = cy - p.X * s + p.Y * c;
-            int ix = (int)(px + 0.5) - am.X0, iy = (int)(py + 0.5) - am.Y0;
-            if (ix < 0 || iy < 0 || ix >= am.Wc || iy >= am.Hc) continue;
+        for (int i = 0; i < diem.Length; i++) tong += DongGop(am, in diem[i], cx, cy, c, s);
+        return Math.Max(0, (tong / diem.Length - am.Nen) / (1 - am.Nen));
+    }
 
-            int o = iy * am.Wc + ix;
-            double gx = am.Ngx[o], gy = am.Ngy[o];
-            if (gx == 0 && gy == 0) continue;
+    /// <summary>
+    /// Đóng góp của MỘT điểm model vào điểm khớp, −1..1.
+    ///
+    /// Tách riêng ra vì train-nhiều-ảnh cần hỏi từng điểm một "mày có trụ được trên ảnh này
+    /// không", mà chép lại 10 dòng này thành bản thứ hai đúng là cái bẫy mà file này đã dính
+    /// một lần rồi (xem chú thích đầu file về hai bản TrichMotMuc phân kỳ). AggressiveInlining
+    /// để vòng nóng của <see cref="Cham"/> không phải trả giá cho việc tách hàm.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static double DongGop(MucAnh am, in DiemModel p, double cx, double cy, double c, double s)
+    {
+        double px = cx + p.X * c + p.Y * s;
+        double py = cy - p.X * s + p.Y * c;
+        int ix = (int)(px + 0.5) - am.X0, iy = (int)(py + 0.5) - am.Y0;
+        if (ix < 0 || iy < 0 || ix >= am.Wc || iy >= am.Hc) return 0;
 
-            double mgx = p.Gx * c + p.Gy * s;
-            double mgy = -p.Gx * s + p.Gy * c;
-            tong += Math.Abs(mgx * gx + mgy * gy);
-        }
+        int o = iy * am.Wc + ix;
+        double gx = am.Ngx[o], gy = am.Ngy[o];
+        if (gx == 0 && gy == 0) return 0;
 
-        const double NgauNhien = 2.0 / Math.PI;
-        double tb = tong / diem.Length;
-        return Math.Max(0, (tb - NgauNhien) / (1 - NgauNhien));
+        double mgx = p.Gx * c + p.Gy * s;
+        double mgy = -p.Gx * s + p.Gy * c;
+        double t = mgx * gx + mgy * gy;
+        return am.BoDau ? Math.Abs(t) : t;
     }
 
     /// <summary>Như <see cref="Cham"/> nhưng lấy mẫu song tuyến, dùng cho tư thế dưới pixel.</summary>
@@ -627,15 +930,19 @@ public static class PmEngine
             double gy = am.Ngy[o] * w00 + am.Ngy[o + 1] * w10 + am.Ngy[o + am.Wc] * w01 + am.Ngy[o + am.Wc + 1] * w11;
             double len = Math.Sqrt(gx * gx + gy * gy);
             if (len < 1e-6) continue;
-            gx /= len; gy /= len;
+
+            // Chuẩn hoá lại CHỈ khi trường không mang trọng số. Có trọng số mà chuẩn hoá là
+            // xoá sạch dung sai khoảng cách: một điểm cách biên 1.9 px sẽ được tính y như
+            // điểm nằm đúng trên biên, và đỉnh bẹt ra đúng bằng bán kính dung sai.
+            if (!am.CoTrongSo) { gx /= len; gy /= len; }
 
             double mgx = p.Gx * c + p.Gy * s;
             double mgy = -p.Gx * s + p.Gy * c;
-            tong += Math.Abs(mgx * gx + mgy * gy);
+            double t = mgx * gx + mgy * gy;
+            tong += am.BoDau ? Math.Abs(t) : t;
         }
 
-        const double NgauNhien = 2.0 / Math.PI;
-        return Math.Max(0, (tong / diem.Length - NgauNhien) / (1 - NgauNhien));
+        return Math.Max(0, (tong / diem.Length - am.Nen) / (1 - am.Nen));
     }
 
     /// <summary>
@@ -731,7 +1038,7 @@ public static class PmEngine
         {
             W = kt.Width, H = kt.Height,
             X0 = cs.X, Y0 = cs.Y, Wc = cs.Width, Hc = cs.Height,
-            Ngx = new float[n], Ngy = new float[n],
+            Ngx = new float[n], Ngy = new float[n], LaBien = new byte[n],
         };
 
         // Sàn = đúng ngưỡng thấp mà Canny đã dùng lúc train mức này, nhân hệ số tinh chỉnh.
@@ -740,32 +1047,159 @@ public static class PmEngine
         //
         // Model cũ chưa có trường này thì NguongThap = 0, khi đó rơi về NguongBienToiThieu —
         // rộng rãi nhưng không chết, hơn hẳn việc siết mù như hạn ngạch phân vị cũ.
-        double san = Math.Max(cfg.NguongBienToiThieu, mm.NguongThap * cfg.HeSoSanChay);
+        double sanThap = Math.Max(cfg.NguongBienToiThieu, mm.NguongThap * cfg.HeSoSanChay);
+        double sanCao = Math.Max(sanThap + 1, mm.NguongCao * cfg.HeSoSanChay);
 
-        // So bằng chuẩn L1 |gx|+|gy|, ĐÚNG như NguongTuTinh lúc train (nó dùng L1 cho khớp
-        // với Canny khi L2gradient = false). Bản cũ so ngưỡng đó với chuẩn L2 √(gx²+gy²);
-        // L1 nằm giữa L2 và √2·L2 nên chỗ đó tự siết thêm 10..27% mà không ai cố ý.
-        // Chuẩn hoá thì vẫn phải chia cho L2, vì hướng cần là vector đơn vị thật.
+        // ---- Bước 1: ĐÂU LÀ BIÊN ----
         //
-        // Bỏ luôn histogram và mảng manh[]: ở L0 của ảnh 5064² đó là một lượt quét thừa và
-        // 102 MB cấp phát thừa cho mỗi mức.
+        // Đây là chỗ train và run trước đây bất đồng, và là lỗi gốc của cả bài. Xem
+        // PmCfg.NmsLucChay.
+        if (cfg.NmsLucChay)
+        {
+            // ĐÚNG hàm mà train đã gọi, đúng cặp ngưỡng của chính mức này nhân HeSoSanChay.
+            // Canny tự làm triệt phi cực đại + trễ nên cho ra chuỗi biên MẢNH 1 px, thay vì
+            // cả một dải dày mà tư thế nào đặt vào cũng trúng.
+            //
+            // Canny của OpenCV tự tính Sobel 3×3 chuẩn L1 bên trong — cùng một phép với dx/dy
+            // ở trên, nên hướng đọc từ dx/dy khớp đúng những pixel mà nó đánh dấu.
+            using var bien = new Mat();
+            Cv2.Canny(mo, bien, sanThap, sanCao);
+            bien.GetArray(out byte[] aBien);
+            for (int o = 0; o < n; o++) am.LaBien[o] = aBien[o] != 0 ? (byte)1 : (byte)0;
+            Dbg.Show(bien, $"L{muc} 4. bien Canny luc chay ({sanThap:F0}/{sanCao:F0})");
+        }
+        else
+        {
+            // Đường cũ giữ nguyên: sàn độ lớn trần trụi. So bằng chuẩn L1 |gx|+|gy|, ĐÚNG như
+            // NguongTuTinh lúc train (nó dùng L1 cho khớp với Canny khi L2gradient = false).
+            // Bản cũ hơn nữa so ngưỡng đó với chuẩn L2 √(gx²+gy²); L1 nằm giữa L2 và √2·L2
+            // nên chỗ đó tự siết thêm 10..27% mà không ai cố ý.
+            for (int o = 0; o < n; o++)
+                if (MathF.Abs(gxs[o]) + MathF.Abs(gys[o]) >= sanThap) am.LaBien[o] = 1;
+        }
+
+        // ---- Bước 2: hướng đơn vị TẠI các pixel biên ----
+        // Chuẩn hoá vẫn phải chia cho L2, vì hướng cần là vector đơn vị thật.
+        var hx = new float[n];
+        var hy = new float[n];
+        int soBien = 0;
         for (int o = 0; o < n; o++)
         {
+            if (am.LaBien[o] == 0) continue;
             float gx = gxs[o], gy = gys[o];
-            if (MathF.Abs(gx) + MathF.Abs(gy) < san) continue;
             float d = MathF.Sqrt(gx * gx + gy * gy);
-            if (d < 1e-6f) continue;
-            am.Ngx[o] = gx / d;
-            am.Ngy[o] = gy / d;
+            if (d < 1e-6f) { am.LaBien[o] = 0; continue; }
+            hx[o] = gx / d; hy[o] = gy / d;
+            soBien++;
         }
+        am.SoBien = soBien;
+
+        // ---- Bước 3: TRẢI hướng đó ra quanh biên theo dung sai ----
+        //
+        // Sau đây Cham không đọc "gradient của pixel này" nữa mà đọc "hướng của biên gần
+        // nhất, mờ dần theo khoảng cách". Nhờ vậy Cham không phải sửa một dòng nào, mà vẫn
+        // có đúng cái dung sai khoảng cách kiểu PatMax.
+        double tol = cfg.DungSaiPx;
+        if (tol > 1e-6 && soBien > 0)
+        {
+            var (kc, nguon) = ChamferGanNhat(am.LaBien, cs.Width, cs.Height);
+            for (int o = 0; o < n; o++)
+            {
+                int p = nguon[o];
+                if (p < 0) continue;
+                float w = (float)(1.0 - kc[o] / tol);
+                if (w <= 0) continue;
+                am.Ngx[o] = w * hx[p];
+                am.Ngy[o] = w * hy[p];
+            }
+            am.CoTrongSo = true;
+        }
+        else
+        {
+            Array.Copy(hx, am.Ngx, n);
+            Array.Copy(hy, am.Ngy, n);
+        }
+
+        // Mức điểm của một tư thế ngẫu nhiên — xem MucAnh.Nen.
+        am.BoDau = cfg.BoQuaChieuTuongPhan;
+        bool duongCu = cfg.BoQuaChieuTuongPhan && !cfg.NmsLucChay && !am.CoTrongSo;
+        am.Nen = duongCu ? 2.0 / Math.PI : 0.0;
 
         if (Dbg.Enabled)
         {
             using var huong = VeHuongGradient(am);
-            Dbg.Show(huong, $"L{muc} 4. huong gradient sau san (san={san:F0}, giu {TyLeGiu(am):P1})");
+            Dbg.Show(huong, $"L{muc} 5. truong huong (san={sanThap:F0}/{sanCao:F0}, {soBien} px bien, " +
+                            $"phu {TyLeGiu(am):P1}, dung sai {tol:F1} px, nen={am.Nen:F3})");
         }
 
         return am;
+    }
+
+    /// <summary>
+    /// Chamfer hai lượt: với mỗi pixel trả về khoảng cách tới biên gần nhất VÀ CHỈ SỐ của
+    /// chính biên đó.
+    ///
+    /// Cần chỉ số chứ không chỉ khoảng cách, vì thứ đi vào công thức chấm điểm là HƯỚNG của
+    /// biên ấy. <c>Cv2.DistanceTransformWithLabels</c> có trả nhãn, nhưng thứ tự đánh nhãn
+    /// của nó không được đặc tả — dựng lại bảng tra nhãn→toạ độ là đoán mò. Hai lượt quét
+    /// dưới đây là 20 dòng, O(n), và biết chắc mình đang làm gì.
+    ///
+    /// Trọng số (1, √2) cho lưới 3×3: sai số tối đa ~8% ở hướng chéo. Với dung sai cỡ 2 px
+    /// thì đó là 0.16 px — dưới mức đáng quan tâm, và rẻ hơn hẳn khoảng cách Euclid thật.
+    /// </summary>
+    private static (float[] Kc, int[] Nguon) ChamferGanNhat(byte[] laBien, int w, int h)
+    {
+        const float VoCuc = 1e9f;
+        const float Cheo = 1.41421356f;
+
+        int n = w * h;
+        var kc = new float[n];
+        var nguon = new int[n];
+        for (int o = 0; o < n; o++)
+        {
+            bool b = laBien[o] != 0;
+            kc[o] = b ? 0f : VoCuc;
+            nguon[o] = b ? o : -1;
+        }
+
+        void Lan(int o, int oTruoc, float them)
+        {
+            if (nguon[oTruoc] < 0) return;
+            float d = kc[oTruoc] + them;
+            if (d >= kc[o]) return;
+            kc[o] = d;
+            nguon[o] = nguon[oTruoc];
+        }
+
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                int o = y * w + x;
+                if (kc[o] == 0) continue;
+                if (y > 0)
+                {
+                    if (x > 0) Lan(o, o - w - 1, Cheo);
+                    Lan(o, o - w, 1f);
+                    if (x + 1 < w) Lan(o, o - w + 1, Cheo);
+                }
+                if (x > 0) Lan(o, o - 1, 1f);
+            }
+
+        for (int y = h - 1; y >= 0; y--)
+            for (int x = w - 1; x >= 0; x--)
+            {
+                int o = y * w + x;
+                if (kc[o] == 0) continue;
+                if (y + 1 < h)
+                {
+                    if (x + 1 < w) Lan(o, o + w + 1, Cheo);
+                    Lan(o, o + w, 1f);
+                    if (x > 0) Lan(o, o + w - 1, Cheo);
+                }
+                if (x + 1 < w) Lan(o, o + 1, 1f);
+            }
+
+        return (kc, nguon);
     }
 
     /// <summary>
@@ -779,14 +1213,25 @@ public static class PmEngine
     private static Mat VeHuongGradient(MucAnh am)
     {
         var buf = new byte[am.W * am.H * 3];
-        for (int o = 0; o < am.Ngx.Length; o++)
-        {
-            float gx = am.Ngx[o], gy = am.Ngy[o];
-            if (gx == 0 && gy == 0) continue;                 // bi san loai -> de den
-            buf[o * 3 + 0] = 40;                              // B: nen mo de thay pixel con song
-            buf[o * 3 + 1] = (byte)(127 + 127 * gy);          // G theo thanh phan doc
-            buf[o * 3 + 2] = (byte)(127 + 127 * gx);          // R theo thanh phan ngang
-        }
+
+        // Truong huong chi phu CUA SO (X0,Y0,Wc,Hc), khong phu ca muc. Ban cu do thang chi so
+        // cua so vao anh day nen moi lan Run co cat cua so la anh debug bi truot len goc trai
+        // va bop meo - nhin thi tuong thuat toan hong.
+        for (int yw = 0; yw < am.Hc; yw++)
+            for (int xw = 0; xw < am.Wc; xw++)
+            {
+                int o = yw * am.Wc + xw;
+                float gx = am.Ngx[o], gy = am.Ngy[o];
+                if (gx == 0 && gy == 0) continue;             // ngoai dung sai -> de den
+
+                int x = am.X0 + xw, y = am.Y0 + yw;
+                if (x < 0 || y < 0 || x >= am.W || y >= am.H) continue;
+                int q = (y * am.W + x) * 3;
+
+                buf[q + 0] = 40;                              // B: nen mo de thay pixel con song
+                buf[q + 1] = (byte)(127 + 127 * gy);          // G theo thanh phan doc
+                buf[q + 2] = (byte)(127 + 127 * gx);          // R theo thanh phan ngang
+            }
 
         // Do thang byte[] vao bo nho Mat. KHONG dung Mat.SetArray o day: no doi kieu phan tu
         // khop voi MatType, dua byte[] vao CV_8UC3 la nem "Mat data type is not compatible".
