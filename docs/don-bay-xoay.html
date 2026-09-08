@@ -368,20 +368,26 @@ figcaption b{color:var(--ink);font-weight:600}
     <li><a href="#s6"><span class="n">06</span><span>Gộp cả model</span></a></li>
     <li><a href="#s7"><span class="n">07</span><span>Dùng để làm gì</span></a></li>
     <li><a href="#s8"><span class="n">08</span><span>Kịch bản đứng lớp</span></a></li>
+    <li><a href="#s9"><span class="n">09</span><span>Cầu nối: Train nhiều ảnh</span></a></li>
   </ol>
 </nav>
 
 <main>
 
 <header class="hero">
-  <p class="eyebrow">Bài giảng · A38 ImageCrop · PatModel.cs</p>
+  <p class="eyebrow">Bài giảng · A38 ImageCrop · PmEngine.cs</p>
   <h1>Đòn bẩy xoay</h1>
   <p class="standfirst">Một dòng code ba phép nhân trả lời câu hỏi: hình này có đo được góc xoay hay không, và nếu có thì phải quét góc mỗi lần bao nhiêu độ. Dựng lại từ đầu bằng đúng vốn toán lớp 11 — vector, tích vô hướng, công thức quay, radian. Không cần đạo hàm.</p>
 
   <div class="codecard">
-    <div class="src">PatModel.cs · dòng 385 · trong hàm TrichMotMuc</div>
+    <div class="src">PmEngine.cs · dòng 372 · trong hàm TinhLaiHinhHoc</div>
     <div class="line">double don = d.X * d.Gy − d.Y * d.Gx;</div>
     <div class="gloss">Đọc thành lời: <b>lấy vector chuyển động khi xoay chấm vô hướng với vector hướng cạnh</b>. Cả bài này là để câu đó trở nên hiển nhiên.</div>
+  </div>
+
+  <div class="box lab">
+    <span class="tag">Cập nhật 2026-09-09 — vì sao đổi vị trí dòng code</span>
+    <p>Bản trước dòng <code>don</code> nằm ngay trong <code>TrichMotMuc</code> — hàm trích điểm. Bản hiện tại nó đã dọn ra một hàm riêng <code>TinhLaiHinhHoc</code>, vì <a href="#s9">Train nhiều ảnh</a> cần <strong>gọi lại đúng phép tính này sau khi đã bỏ bớt điểm</strong> — bỏ điểm mà không tính lại thì bước góc và bán kính của model vẫn theo số cũ, sai âm thầm. Một công thức, hai chỗ gọi — đúng nguyên tắc "một bộ code" mà toàn bộ engine này theo đuổi.</p>
   </div>
 
   <div class="glossary">
@@ -438,7 +444,7 @@ figcaption b{color:var(--ink);font-weight:600}
   <div class="fx">
     Gx = (số bên phải) − (số bên trái)<br>
     Gy = (số bên dưới) − (số bên trên)
-    <span class="cap">Đây chính là việc mà <code>Cv2.Sobel</code> làm ở dòng 325–328. Sobel còn lấy thêm hàng trên hàng dưới cho đỡ nhiễu, nhưng lõi vẫn là phép trừ trái − phải.</span>
+    <span class="cap">Đây chính là việc mà <code>Cv2.Sobel</code> làm ở <code>PmEngine.cs</code>, dòng 290–291 (trong <code>TrichMotMuc</code>). Sobel còn lấy thêm hàng trên hàng dưới cho đỡ nhiễu, nhưng lõi vẫn là phép trừ trái − phải.</span>
   </div>
 
   <figure>
@@ -572,7 +578,7 @@ figcaption b{color:var(--ink);font-weight:600}
   <div class="fx">
     X′ = X·cos θ − Y·sin θ<br>
     Y′ = X·sin θ + Y·cos θ
-    <span class="cap">Gốc toạ độ ở đây là <strong>tâm của model</strong> — code đặt <code>cx = w/2</code>, <code>cy = h/2</code> rồi trừ đi (dòng 357, 374). Mọi điểm đều mang toạ độ so với tâm, và ta xoay quanh tâm.</span>
+    <span class="cap">Gốc toạ độ ở đây là <strong>tâm của model</strong> — <code>TrichMotMuc</code> đặt <code>cx = w/2f, cy = h/2f</code> ở dòng 328 rồi trừ đi khi tạo từng <code>DiemModel(x − cx, y − cy, ...)</code> ở dòng 340. Mọi điểm đều mang toạ độ so với tâm, và ta xoay quanh tâm.</span>
   </div>
 
   <p>Bây giờ là mẹo duy nhất của cả bài. Ta không cần xoay 30°. Ta chỉ cần biết chuyện gì xảy ra khi xoay <strong>một góc rất nhỏ</strong> — vì câu hỏi ta đang đuổi theo là “nhích thêm bao nhiêu thì bắt đầu thấy khác”.</p>
@@ -822,7 +828,7 @@ figcaption b{color:var(--ink);font-weight:600}
 
   <div class="fx">
     đònBẩy<span class="sub">rad</span> = <span class="sqrt">√<span>( don<sub>1</sub>² + don<sub>2</sub>² + … + don<sub>N</sub>² ) / N</span></span>
-    <span class="cap">Dòng 381–390. Đây gọi là <strong>giá trị hiệu dụng</strong> (RMS) — cùng loại phép tính với “điện 220V” mà lớp 12 sẽ gặp, và cùng họ với độ lệch chuẩn. Đọc là: một điểm điển hình của model này trượt chừng ấy pixel khi xoay 1 radian.</span>
+    <span class="cap"><code>PmEngine.cs</code>, hàm <code>TinhLaiHinhHoc</code>, dòng 365–377. Đây gọi là <strong>giá trị hiệu dụng</strong> (RMS) — cùng loại phép tính với “điện 220V” mà lớp 12 sẽ gặp, và cùng họ với độ lệch chuẩn. Đọc là: một điểm điển hình của model này trượt chừng ấy pixel khi xoay 1 radian.</span>
   </div>
 
   <p>Rồi đổi đơn vị sang <strong>độ</strong>, vì người ta nói chuyện bằng độ chứ không bằng radian. Một độ bằng π/180 radian, nên:</p>
@@ -836,7 +842,7 @@ figcaption b{color:var(--ink);font-weight:600}
   <span class="sec-n">07</span>
   <h2>Quay lại câu hỏi mở đầu — dùng để làm gì</h2>
 
-  <p>Nhớ câu hỏi ở phần 00: quét góc bước bao nhiêu? Dòng 159 lấy nghịch đảo:</p>
+  <p>Nhớ câu hỏi ở phần 00: quét góc bước bao nhiêu? <code>PmModel.cs</code>, thuộc tính <code>BuocGocDo</code> của <code>MucPm</code> (dòng 42) lấy nghịch đảo:</p>
 
   <div class="fx key">
     BuocGocDo = 1 / DonBayXoay
@@ -887,16 +893,16 @@ figcaption b{color:var(--ink);font-weight:600}
   <p>Vậy là máy <strong>tự chọn bước quét góc theo hình dạng</strong>: model dài, gai góc, nhiều cạnh xa tâm thì đòn bẩy lớn, đỉnh hẹp, bước góc phải mịn. Model tròn trịa thì đòn bẩy nhỏ, đỉnh bè ra, bước góc thô cũng không sao. Không ai phải chỉnh tay, và không phí một vòng lặp nào.</p>
 
   <h3>Còn TiLeDonBay là bài kiểm tra sức khoẻ</h3>
-  <p>Dòng 149 so đòn bẩy thực tế với trường hợp lý tưởng — khi mọi cạnh đều quay ngang hoàn hảo thì don đúng bằng r. Ra 80% nghĩa là hình rất có hướng, tin được góc tìm ra. Ra 5% nghĩa là hình gần đối xứng xoay, góc tìm được có thể là số ngẫu nhiên, đừng tin.</p>
+  <p><code>PmModel.cs</code>, thuộc tính <code>TiLeDonBay</code> (dòng 45) so đòn bẩy thực tế với trường hợp lý tưởng — khi mọi cạnh đều quay ngang hoàn hảo thì don đúng bằng r. Ra 80% nghĩa là hình rất có hướng, tin được góc tìm ra. Ra 5% nghĩa là hình gần đối xứng xoay, góc tìm được có thể là số ngẫu nhiên, đừng tin.</p>
 
   <div class="tbl-wrap">
     <table>
-      <thead><tr><th>Dòng</th><th>Đại lượng</th><th>Ý nghĩa</th></tr></thead>
+      <thead><tr><th>Ở đâu</th><th>Đại lượng</th><th>Ý nghĩa</th></tr></thead>
       <tbody>
-        <tr><td class="num">385</td><td class="num">don</td><td>Đòn bẩy của một điểm — px trượt ngang cạnh khi xoay 1 radian.</td></tr>
-        <tr><td class="num">381–390</td><td class="num">DonBayXoay</td><td>Giá trị hiệu dụng của cả model, đã đổi sang px trên mỗi độ.</td></tr>
-        <tr><td class="num">159</td><td class="num">BuocGocDo</td><td>Nghịch đảo — bao nhiêu độ thì trượt 1 px. Chính là bước quét góc.</td></tr>
-        <tr><td class="num">149</td><td class="num">TiLeDonBay</td><td>So với trường hợp lý tưởng. Thấp quá thì đừng tin góc tìm được.</td></tr>
+        <tr><td class="num">PmEngine.cs:372</td><td class="num">don</td><td>Đòn bẩy của một điểm — px trượt ngang cạnh khi xoay 1 radian.</td></tr>
+        <tr><td class="num">PmEngine.cs:365–377</td><td class="num">DonBayXoay</td><td>Giá trị hiệu dụng của cả model, đã đổi sang px trên mỗi độ. Hàm <code>TinhLaiHinhHoc</code>.</td></tr>
+        <tr><td class="num">PmModel.cs:42</td><td class="num">BuocGocDo</td><td>Nghịch đảo — bao nhiêu độ thì trượt 1 px. Chính là bước quét góc.</td></tr>
+        <tr><td class="num">PmModel.cs:45</td><td class="num">TiLeDonBay</td><td>So với trường hợp lý tưởng. Thấp quá thì đừng tin góc tìm được.</td></tr>
       </tbody>
     </table>
   </div>
@@ -945,8 +951,24 @@ figcaption b{color:var(--ink);font-weight:600}
   </div>
 
   <div class="closing">
-    Nguồn: PatModel.cs · TrichMotMuc (dòng 310–404) · A38.ImageCrop<br>
+    Nguồn: PmEngine.cs · TrichMotMuc (dòng 283–357) · TinhLaiHinhHoc (dòng 365–377) · PmModel.cs · MucPm (dòng 21–46) · A38.ImageCrop<br>
     Ký hiệu trong bài đặt trùng tên biến trong code để đối chiếu trực tiếp.
+  </div>
+</section>
+
+<section id="s9">
+  <span class="sec-n">09</span>
+  <h2>Cầu nối — vì sao Train nhiều ảnh cần đúng công thức này</h2>
+
+  <p>Bài này dựng công thức <code>don</code> trong bối cảnh Train <strong>một</strong> ảnh. Nhưng <code>TrainOnDinh</code> (Train nhiều ảnh) làm một việc thêm: sau khi bỏ phiếu qua nhiều ảnh phụ, nó <strong>xoá bớt điểm</strong> khỏi model — điểm nào không "trụ" được ở đủ số ảnh thì bị loại (xem <code>PmCfg.TiLeOnDinh</code>, <code>NguongTruDiem</code>).</p>
+
+  <p>Xoá điểm thì hai con số của bài này — <span class="ve">BanKinh</span> và <span class="vs">DonBayXoay</span> — <strong>không còn đúng nữa</strong>, vì chúng được tính từ đúng tập điểm đang có. Ví dụ: nếu vô tình xoá hết các điểm gần góc (kiểu ví dụ B) mà chỉ giữ điểm giữa cạnh (kiểu ví dụ A), đòn bẩy thật của model đã tụt gần về 0, nhưng nếu không tính lại thì code vẫn dùng <code>BuocGocDo</code> cũ — bước quét góc sẽ sai, quá thô so với hình dạng thật còn lại.</p>
+
+  <p>Đó là lý do dòng <code>don = d.X * d.Gy − d.Y * d.Gx</code> phải đứng trong một hàm riêng <code>TinhLaiHinhHoc</code> chứ không nằm cứng trong <code>TrichMotMuc</code>: <code>TrichMotMuc</code> gọi nó một lần lúc mới trích điểm, còn <code>TrainOnDinh</code> gọi <strong>lại</strong> đúng hàm đó — không viết lại — ngay sau khi lọc bớt điểm, ở mỗi mức kim tự tháp còn sống sót.</p>
+
+  <div class="box key">
+    <span class="tag">Điểm chốt</span>
+    <p>Đòn bẩy xoay không phải một hằng số của <em>hình dạng vật thể</em> — nó là hằng số của <em>tập điểm model đang có tại thời điểm đó</em>. Đổi tập điểm (dù chỉ bớt đi) thì phải tính lại, không được giữ số cũ.</p>
   </div>
 </section>
 
