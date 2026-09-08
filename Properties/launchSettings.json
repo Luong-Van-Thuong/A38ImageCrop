@@ -12,21 +12,9 @@
       "commandName": "Project",
       "commandLineArgs": "--tu-kiem"
     },
-    "model": {
+    "help": {
       "commandName": "Project",
-      "commandLineArgs": "--model --no-window --no-pause"
-    },
-    "model (co cua so debug)": {
-      "commandName": "Project",
-      "commandLineArgs": "--model"
-    },
-    "hoc buoc 1": {
-      "commandName": "Project",
-      "commandLineArgs": "--hoc 1 --no-pause"
-    },
-    "nghieng": {
-      "commandName": "Project",
-      "commandLineArgs": "--nghieng"
+      "commandLineArgs": "--help"
     }
   }
 }

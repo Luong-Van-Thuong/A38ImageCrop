@@ -14,10 +14,12 @@ dotnet run -- "D:\anh\1B.bmp"       # nhu tren, mo san mot tam anh
 dotnet run -- --tu-kiem             # tu kiem engine bang chan ly biet truoc
 ```
 
-App là `WinExe`: mở giao diện **không** kèm cửa sổ terminal đen nào. Các nhánh console
-(`--model`, `--hoc`, `--nghieng`, `--do-bien`, `--tu-kiem`, `--help`) vẫn in bình thường —
-`Program.MoConsoleNeuCan()` bám vào console của shell đang gọi, hoặc tự mở một cái nếu bấm
-đúp từ Explorer.
+App là `WinExe`: mở giao diện **không** kèm cửa sổ terminal đen nào. Hai nhánh console
+(`--tu-kiem`, `--do-bien`, cùng `--help`) vẫn in bình thường — `Program.MoConsoleNeuCan()`
+bám vào console của shell đang gọi, hoặc tự mở một cái nếu bấm đúp từ Explorer.
+
+Hai nhánh đó **không phải tính năng**, chúng là **thước đo**: chúng trả lời câu "Train/Run
+chạy đúng chưa", thứ mà bấm nút trên giao diện không bao giờ trả lời được.
 
 ## Giao diện PmAlign
 
@@ -133,10 +135,12 @@ lọc **chưa hề chạy**, phải hạ `TiLeOnDinh` / `NguongTruDiem`.
 | `PmAlign/PmVe.cs` | Mat ↔ BitmapSource, và bảng vẽ model để soi bằng mắt. |
 | `PmAlign/PmTuKiem.cs` | Tự kiểm bằng chân lý biết trước (`--tu-kiem`). |
 | `PmAlign/PmDoBien.cs` | Đo **biên** giữa đỉnh đúng và đỉnh sai trên cả một thư mục ảnh, nhiều cấu hình một lượt (`--do-bien`). Ra CSV + ảnh ghép để mắt phán xử. |
-| `Program.cs` | Bảng điều phối: không cờ → giao diện; có cờ → ba nhánh console cũ. |
+| `Dbg.cs` | Hiện/ghi ảnh từng bước; cửa sổ Debug của app dùng chung đường này. |
+| `Program.cs` | Bảng điều phối: không cờ → giao diện; hai cờ đo lường → console. |
 
-Ba file cũ `PatModel.cs`, `HocDoMau.cs`, `YeaJoungCheckCoiNghieng.cs` và `Dbg.cs` giữ nguyên
-để chạy lại các bài đo trước đây; **không** còn nằm trên đường chạy chính.
+Nhánh đã được dọn còn đúng một đường chạy. `PatModel.cs`, `HocDoMau.cs`,
+`YeaJoungCheckCoiNghieng.cs` (ba nhánh console `--model` / `--hoc` / `--nghieng`) và
+`sample.png` đã xoá ở commit dọn nhánh — lấy lại bằng `git show 9459851:PatModel.cs` khi cần.
 
 ## Tự kiểm
 
@@ -179,24 +183,6 @@ Ba cái bẫy đã dính khi dựng bài đo này, đều làm ra con số đẹ
    `ghep_chanly.png` bằng mắt trước khi tin bảng số.
 3. **Chỉ nhìn top-1.** Đỉnh sai cao nhất phải đo *trên chính tấm ảnh có vật*, không phải mượn
    từ tấm khác — nếu không thì biên đo ra vô nghĩa.
-
-## Ba nhánh console cũ
-
-```powershell
-dotnet run -- --nghieng                              # do goc alpha ca bo OK/NG  -> nghieng_out\
-dotnet run -- --hoc 1 --no-pause                     # bai hoc buoc 1..4         -> hoc_out\
-dotnet run -- --model --no-window --no-pause         # trich model tu ModelCfg.AnhMaster -> model_out\
-```
-
-Đường dẫn, vùng khoanh, ngưỡng của ba nhánh này nằm trong class `*Cfg` đầu mỗi file — sửa code
-rồi `dotnet run` lại. Cờ debug dùng chung: `--no-pause`, `--no-window`, `--no-debug`, `--only <tên>`.
-
-**`--nghieng`** — `NghiengCfg`: `AnhMaster` + `VungTu` **luôn sửa cùng nhau**; đổi master mà
-quên đổi Rect thì model trích ra rác nhưng chương trình vẫn chạy êm và trả α bậy.
-
-**`--hoc`** — `HocCfg`: `AnhGoc`, `VungKhoanh`, `BanKinhNoi`.
-
-**`--model`** — `ModelCfg`: `VungKhoanh`, `SoMuc`, `KhoangCachDiem`, `SoDiemToiDa`.
 
 ## Còn thiếu gì so với CogPMAlign
 
