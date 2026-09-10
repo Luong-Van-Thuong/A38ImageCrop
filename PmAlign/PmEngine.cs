@@ -5,12 +5,19 @@ using System.Runtime.InteropServices;
 namespace A38.ImageCrop.PmAlign;
 
 /// <summary>
-/// Engine dò mẫu theo hình dạng — MỘT bộ code duy nhất cho cả Train lẫn Run.
+/// Engine dò mẫu theo hình dạng — một bộ code duy nhất cho cả Train lẫn Run.
 ///
-/// Chữ "MỘT bộ code" là bài học đắt nhất của branch: bản cũ có HAI hàm trích điểm chép ra
-/// từ nhau rồi phân kỳ (2000 điểm với 900, một bên có don-care một bên không). Train một
-/// đằng mà Run một nẻo thì điểm số không còn nghĩa gì — chấm 0.9 hay 0.3 đều không nói lên
-/// điều gì về con hàng. Mọi thứ dưới đây dùng chung một hàm trích và một hàm chấm điểm.
+/// MẠCH CHÍNH
+///   Train: ảnh mẫu + ROI xoay → dựng thẳng → kim tự tháp → mỗi mức trích một tập điểm
+///          biên có hướng → <see cref="PmModel"/> (lưu ra .pmm.json được).
+///   Run:   ảnh chạy + vùng tìm → dựng trường hướng gradient cho từng mức → quét ở mức
+///          thô nhất → tinh chỉnh dần xuống L0 → nội suy dưới pixel → <see cref="KetQuaPm"/>.
+///
+/// RÀNG BUỘC PHẢI GIỮ: Train và Run dùng CHUNG một hàm trích điểm
+/// (<see cref="TrichMotMuc"/>) và CHUNG một hàm chấm điểm (<see cref="DongGop"/>). Hai bên
+/// mà định nghĩa "biên" hoặc "hướng" khác nhau thì điểm số mất hết ý nghĩa — 0.9 hay 0.3
+/// đều không nói lên điều gì về con hàng. Cần đổi cách tính thì đổi ở một chỗ, đừng chép
+/// ra bản thứ hai.
 ///
 /// QUY ƯỚC GÓC lấy nguyên của <see cref="RectXoay"/>: y hướng xuống, góc dương quay ngược
 /// chiều kim đồng hồ trên màn hình, R(θ) = [[cos, sin], [−sin, cos]].
@@ -127,8 +134,8 @@ public static class PmEngine
     /// TRAIN NHIỀU ẢNH — train như thường trên ảnh mẫu, rồi bắt model tự chứng minh trên
     /// những ảnh khác và LOẠI những điểm không trụ được.
     ///
-    /// Vì sao cần: model JeaYoung/Coil có 339 điểm ở L0 cho một chu vi 546 px, tức HƠN NỬA
-    /// số điểm nằm trong lòng con hàng — trên các vệt phản quang đổi hoàn toàn theo góc
+    /// Vì sao cần: train một ảnh thường cho ra nhiều điểm hơn chu vi thật của con hàng, tức
+    /// một phần lớn điểm nằm TRONG LÒNG vật — trên các vệt phản quang đổi hoàn toàn theo góc
     /// nghiêng. Những điểm ấy hại cả hai đầu: chúng kéo điểm của tư thế ĐÚNG xuống (vì trên
     /// ảnh khác chúng không còn ở đó), và chúng dễ ăn may trên texture y như mọi điểm khác.
     ///
@@ -211,7 +218,7 @@ public static class PmEngine
     /// <summary>
     /// Ở một tư thế đã biết, hỏi từng điểm model "mày có trụ được trên ảnh này không" và
     /// cộng phiếu. Dùng đúng <see cref="DongGop"/> mà lúc chấm điểm dùng, nên tiêu chí bỏ
-    /// phiếu và tiêu chí cho điểm không thể phân kỳ.
+    /// phiếu và tiêu chí cho điểm luôn là một.
     /// </summary>
     private static void BoPhieu(Mat anh, PmModel model, double x, double y, double gocMauDo,
                                 PmCfg cfg, int[][] phieu)
@@ -319,10 +326,8 @@ public static class PmEngine
         int cotLuoi = (w + oLuoi - 1) / oLuoi;
         var daChiem = new bool[cotLuoi * ((h + oLuoi - 1) / oLuoi)];
 
-        // Trần là SoDiemToiDa đúng nghĩa SỐ ĐIỂM. Bản cũ viết
-        //     soDiemMax = ceil(sqrt(w*h / SoDiemToiDa))
-        // nên với mẫu 200x200 và SoDiemToiDa = 2000 thì trần thật chỉ là 5 điểm — đặt tham
-        // số 2000 mà nhận về 5, đó là kiểu lỗi không bao giờ ném exception.
+        // Trần đọc thẳng là SỐ ĐIỂM, không phải mật độ hay khoảng cách quy đổi: đặt 2000 thì
+        // nhận tối đa 2000 điểm, ở mẫu cỡ nào cũng vậy.
         int tran = Math.Max(8, cfg.SoDiemToiDa);
 
         float cx = w / 2f, cy = h / 2f;
@@ -362,7 +367,7 @@ public static class PmEngine
     /// Có hàm riêng vì train-nhiều-ảnh loại bớt điểm sau khi đã trích: bỏ điểm mà quên tính
     /// lại hai con số này thì bước góc và lề cắt patch vẫn theo model cũ — sai âm thầm.
     /// </summary>
-    private static void TinhLaiHinhHoc(MucPm mp)
+    private static void TinhLaiHinhHoc(MucPm mp) 
     {
         float banKinh = 0;
         double tongBinh = 0;
@@ -426,8 +431,8 @@ public static class PmEngine
 
         /// <summary>
         /// Hướng của biên GẦN NHẤT, đã nhân trọng số theo khoảng cách tới biên đó.
-        /// Khi <see cref="PmCfg.DungSaiPx"/> = 0 thì đây lại đúng là hướng gradient của
-        /// chính pixel đó, độ dài 1 — tức hành vi cũ.
+        /// Khi <see cref="PmCfg.DungSaiPx"/> = 0 thì không có trải: mỗi ô mang đúng hướng
+        /// gradient của chính pixel đó, độ dài 1.
         /// </summary>
         public float[] Ngx = [], Ngy = [];
 
@@ -444,12 +449,14 @@ public static class PmEngine
         public bool CoTrongSo;
 
         /// <summary>
-        /// Điểm mà một tư thế ngẫu nhiên đạt được — thứ phải trừ đi để con số nói lên gì đó.
+        /// Điểm mà một tư thế NGẪU NHIÊN đạt được — thứ phải trừ đi để con số nói lên gì đó.
         ///
-        /// Chỉ bằng 2/π ở ĐÚNG đường chạy cũ (bỏ dấu + không NMS + không dung sai), vì hằng
-        /// số ấy chỉ đúng khi mọi pixel đều có hướng. Có NMS thì phần lớn điểm model rơi vào
-        /// chỗ trống và đóng góp 0, có dung sai thì đóng góp còn bị nhân w &lt; 1 — trừ 0.637
-        /// trong hai trường hợp đó là trừ oan, mọi thứ về 0 sạch. Khi ấy nền đúng là 0.
+        /// Giá trị phụ thuộc cấu hình chấm điểm, nên nó là một trường chứ không phải hằng số:
+        ///  • Bỏ dấu + không NMS + không dung sai ⇒ mọi pixel đều có hướng, góc lệch phân bố
+        ///    đều, nên nền = E[|cos|] = 2/π ≈ 0.637.
+        ///  • Có NMS ⇒ phần lớn điểm model rơi vào chỗ trống và đóng góp 0; có dung sai ⇒
+        ///    đóng góp còn bị nhân w &lt; 1. Trừ 0.637 ở đây là trừ oan, mọi thứ về 0 sạch,
+        ///    nên nền = 0.
         /// </summary>
         public double Nen;
     }
@@ -478,16 +485,15 @@ public static class PmEngine
         int le = (int)Math.Ceiling(r0) + 4;
         Rect bao = NoiRong(vt.BaoNgoai(), le, anh.Size());
 
-        // Kéo cạnh patch thành BỘI của 2^(số mức−1). Hai cái lợi, cả hai đều đo được:
+        // Kéo cạnh patch thành BỘI của 2^(số mức−1). Hai cái lợi:
         //
         //  • ĐÚNG hơn. Toàn bộ phần tinh chỉnh nhân toạ độ với 2 khi xuống một mức
         //    (`u.X * 2`), tức là ngầm coi mức i có kích thước đúng bằng W/2^i. Nhưng
         //    kích thước thật là round(W/2^i): với patch rộng 1917 thì L5 là 60, mà
         //    60×32 = 1920 ≠ 1917 — mép phải lệch tới 3 px ảnh gốc, và lệch đó phải
         //    nằm gọn trong cửa sổ dò ±3 px mới không mất vật.
-        //  • NHANH hơn. Chia hết thì `ChuanBiMucAnh` được phép cắt trước rồi mới thu nhỏ.
-        //    Không chia hết thì mọi mức đều phải thu nhỏ CẢ patch: đo trên bộ c1, riêng
-        //    khoản đó là 20 ms trong 79 ms.
+        //  • NHANH hơn. Chia hết thì `ChuanBiMucAnh` được phép cắt trước rồi mới thu nhỏ;
+        //    không chia hết thì mọi mức đều phải thu nhỏ CẢ patch.
         //
         // Nới ra chứ không cắt vào, và chỉ nới khi ảnh còn chỗ — thà bỏ tối ưu còn hơn
         // cắt mất một dải mà vật có thể đang nằm ở đó.
@@ -509,7 +515,6 @@ public static class PmEngine
         Cv2.FillConvexPoly(chophep0, dinh, Scalar.All(255));
         Dbg.Show(chophep0, "chophep0");
 
-      //  Dbg.Show(chophep0, "chophep0");
         // Mức thô nhất dùng được: đủ điểm model VÀ patch còn đủ to để quét.
         int mucTho = 0;
         for (int i = model.Muc.Count - 1; i >= 0; i--)
@@ -567,14 +572,16 @@ public static class PmEngine
         // Gom ứng viên THEO TỪNG GÓC MỘT, mỗi góc giữ riêng phần tốt nhất của nó.
         //
         // Gom chung rồi mới cắt theo điểm là hỏng: ở mức thô một pixel bằng 2^L pixel ảnh
-        // gốc (L5 là 32), nên vài chục tư thế sai góc nhưng gần đúng chỗ có thể chiếm hết
-        // suất và đẩy văng giả thuyết GÓC đúng — đo được: góc đúng 23.7° bị loại sạch trong
-        // khi mức thô vẫn báo điểm cao nhất 0.927, rồi tinh chỉnh xuống L0 ra 0.000.
+        // gốc (L5 là 32), nên vài chục tư thế sai góc nhưng gần đúng chỗ chiếm hết suất và
+        // đẩy văng giả thuyết GÓC đúng. Triệu chứng khó lần: mức thô vẫn báo điểm cao (0.9+)
+        // mà tinh chỉnh xuống L0 lại ra 0.000, vì giả thuyết sống sót không phải giả thuyết
+        // đúng. Điểm cao ở mức thô KHÔNG có nghĩa là mọi thứ ổn.
         var ungVien = new List<(double Diem, double X, double Y, double Goc)>();
 
         // Mỗi góc là một bài toán độc lập, không đụng gì vào nhau ngoài mấy mảng CHỈ ĐỌC.
-        // Kết quả gom vào mảng theo chỉ số góc rồi mới nối lại, nên thứ tự ứng viên giống hệt
-        // bản một luồng — đo trên bộ c1: 10/10 ảnh ra đúng từng chữ số, quét thô 2176 → 262 ms.
+        // Kết quả gom vào mảng THEO CHỈ SỐ GÓC rồi mới nối lại, nên thứ tự ứng viên không phụ
+        // thuộc thứ tự luồng chạy xong: cùng đầu vào luôn cho cùng đầu ra, từng chữ số.
+        // Giữ tính chất này khi sửa — mất nó là mất khả năng tái lập một ca lỗi.
         var theoGoc = new List<(double Diem, double X, double Y, double Goc)>?[soGoc];
         Parallel.For(0, soGoc, ig =>
         {
@@ -700,8 +707,8 @@ public static class PmEngine
         // cùng chỗ là cùng một vật chứ không còn là hai giả thuyết góc nữa.
         //
         // Xếp theo DiemXep (đã trừ clutter) chứ không theo Diem: nếu clutter không được phép
-        // đổi thứ hạng thì nó chỉ là một con số trang trí. Với HeSoClutter = 0 thì hai cái
-        // bằng nhau, nên mặc định vẫn là hành vi cũ.
+        // đổi thứ hạng thì nó chỉ là một con số trang trí. Với HeSoClutter = 0 — mặc định —
+        // thì DiemXep = Diem, tức clutter chỉ được đo và báo ra chứ không can thiệp.
         var loc = LocTrung(ra.OrderByDescending(k => k.DiemXep)
                              .Select(k => (k.DiemXep, k.X, k.Y, k.GocMauDo)).ToList(),
                            Math.Max(2.0, model.Muc[0].BanKinh * 0.3), 0);
@@ -885,10 +892,11 @@ public static class PmEngine
     /// <summary>
     /// Đóng góp của MỘT điểm model vào điểm khớp, −1..1.
     ///
-    /// Tách riêng ra vì train-nhiều-ảnh cần hỏi từng điểm một "mày có trụ được trên ảnh này
-    /// không", mà chép lại 10 dòng này thành bản thứ hai đúng là cái bẫy mà file này đã dính
-    /// một lần rồi (xem chú thích đầu file về hai bản TrichMotMuc phân kỳ). AggressiveInlining
-    /// để vòng nóng của <see cref="Cham"/> không phải trả giá cho việc tách hàm.
+    /// Tách riêng ra vì train-nhiều-ảnh (<see cref="BoPhieu"/>) cần hỏi từng điểm một "mày có
+    /// trụ được trên ảnh này không" — và nó PHẢI hỏi bằng đúng phép tính mà <see cref="Cham"/>
+    /// dùng. Cần sửa cách cho điểm thì sửa ở đây, đừng chép ra bản thứ hai (xem ràng buộc ở
+    /// đầu file). AggressiveInlining để vòng nóng của <see cref="Cham"/> không phải trả giá
+    /// cho việc tách hàm.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static double DongGop(MucAnh am, in DiemModel p, double cx, double cy, double c, double s)
@@ -946,24 +954,20 @@ public static class PmEngine
     }
 
     /// <summary>
-    /// Dung truong huong gradient cua anh chay o mot muc — thu ma <see cref="Cham"/> doc.
+    /// Dựng trường hướng gradient của ảnh chạy ở một mức — thứ mà <see cref="Cham"/> đọc.
     ///
-    /// SAN LAY TU MODEL, khong lay tu anh chay. Ban cu dat san bang phan vi 0.85 cua chinh
-    /// khung tim kiem: luon giu dung 15% pixel manh nhat, bat ke anh nao. Do la mot HAN NGACH
-    /// chu khong phai mot nguong, va no hong o muc tho — o L5 con hang chi chiem 2,5% khung
-    /// (22x29 trong 158x158) va canh cua no da bi thu nho 32 lan lam nhoe, nen no thua suat
-    /// truoc nen va moi thu khac trong tam anh 5064². Do duoc tren bo cnc2_: san hien tai
-    /// 176..231 trong khi luc train chi lay tu 93.2 — siet gap 2..2,5 lan so voi luc chon diem.
-    /// Hau qua: dat model vao DUNG cho dung, chi 27/59 diem roi vao pixel con song, va vi
-    /// <see cref="Cham"/> tru di muc ngau nhien 2/pi ~ 0.637 nen 27/59 = 0.458 ra diem DUNG
-    /// BANG 0 — muc tho mu hoan toan, Run tra ve rong.
+    /// SÀN LẤY TỪ MODEL, không lấy từ ảnh chạy: <see cref="MucPm.NguongThap"/> là ngưỡng
+    /// Canny mà chính mức này đã dùng lúc train, đã nằm sẵn trong .pmm.json. Nhờ vậy train và
+    /// run cùng một tiêu chí, và sàn không phụ thuộc việc người dùng khoanh vùng to hay nhỏ.
     ///
-    /// Con mot hong nua: han ngach doi theo khung, nen khoanh vung tim kiem HEP LAI (tuc la
-    /// cho tool them thong tin) lai lam san tang tu 176 len 211 va hong nang hon.
+    /// ĐỪNG đổi sang hạn ngạch kiểu "giữ 15% pixel mạnh nhất của khung tìm kiếm". Hạn ngạch
+    /// nghe hợp lý nhưng hỏng ở mức thô: ở L5 con hàng chỉ chiếm cỡ 2,5% khung và cạnh của nó
+    /// đã bị thu nhỏ 32 lần làm nhoè, nên nó thua suất trước nền — sàn vọt lên gấp 2..2,5 lần
+    /// so với lúc chọn điểm, quá nửa số điểm model rơi vào pixel đã bị loại, và điểm của tư
+    /// thế ĐÚNG ra bằng 0. Mức thô mù hoàn toàn, Run trả về rỗng.
     ///
-    /// <see cref="MucPm.NguongThap"/> da duoc tinh luc train va da luu trong .pmm.json, chi la
-    /// truoc day khong ai doc. Dung no thi train va run cung mot tieu chi, va san het phu thuoc
-    /// vao viec nguoi dung khoanh vung to hay nho.
+    /// Dấu hiệu nhận ra kiểu thiết kế đó: hạn ngạch đổi theo khung, nên khoanh vùng tìm kiếm
+    /// HẸP LẠI — tức cho tool thêm thông tin — lại làm sàn tăng và kết quả tệ đi.
     /// </summary>
     private static MucAnh ChuanBiMucAnh(Mat xam, MucPm mm, PmCfg cfg, Rect? cuaSo = null)
     {
@@ -974,14 +978,14 @@ public static class PmEngine
 
         // CỬA SỔ — chỉ làm mờ + Sobel + chuẩn hoá trong đúng vùng mà Cham sẽ đọc.
         //
-        // Đây là chỗ tốn nhất của cả Run, và trước đây tốn oan gần hết. Ở mức tinh chỉnh chỉ
-        // còn 3..20 ứng viên, mỗi ứng viên dò 7×7 vị trí, nên số ô thật sự được đọc ở L0 là
-        // cỡ 3 × 49 × 500 điểm ≈ 73 nghìn — trong khi bản cũ dựng đủ 25,6 triệu pixel của ảnh
-        // 5064² và cấp hai mảng float 102 MB cho mỗi mức. Đo trên bộ cnc2_den/c1: riêng khoản
-        // này là 361 ms trong 531 ms của toàn bộ phần tinh chỉnh; sau khi cắt cửa sổ còn 39 ms.
+        // Đây là chỗ tốn nhất của cả Run, nên nó chỉ được phép làm đúng phần cần. Ở mức tinh
+        // chỉnh chỉ còn 3..20 ứng viên, mỗi ứng viên dò 7×7 vị trí, nên số ô thật sự được đọc
+        // ở L0 chỉ cỡ 3 × 49 × 500 điểm ≈ 73 nghìn — dựng cả mức là cấp hai mảng float hàng
+        // trăm MB để rồi đọc vài phần nghìn trong đó.
         //
         // Nới thêm 8 px quanh cửa sổ để nhân làm mờ 5×5 và Sobel 3×3 ở sát mép vẫn cho ra
-        // ĐÚNG con số như khi chạy trên cả mức — đã đối chiếu: điểm từng mức khớp từng chữ số.
+        // ĐÚNG con số như khi chạy trên cả mức. Sửa cửa sổ thì phải giữ được tính chất này:
+        // điểm từng mức phải khớp từng chữ số với khi chạy không cắt.
         var cs = cuaSo is { } c0 ? NoiRong(c0, 8, kt) : new Rect(0, 0, kt.Width, kt.Height);
         if (cs.Width < 8 || cs.Height < 8) cs = new Rect(0, 0, kt.Width, kt.Height);
         bool trong = cs.Width == kt.Width && cs.Height == kt.Height;
@@ -1021,8 +1025,8 @@ public static class PmEngine
         Cv2.Sobel(mo, dx, MatType.CV_32F, 1, 0, 3);
         Cv2.Sobel(mo, dy, MatType.CV_32F, 0, 1, 3);
 
-        // Ban cu hien lai chinh 'mo' o day nen ket qua Sobel chua bao gio nhin thay duoc.
-        // Do lon gradient moi la thu can soi: no cho biet muc nay con canh nao du manh.
+        // Hiện ĐỘ LỚN GRADIENT, không hiện lại ảnh đã làm mờ: đây mới là thứ cần soi, nó cho
+        // biết mức này còn cạnh nào đủ mạnh.
         if (Dbg.Enabled)
         {
             using var doLon = new Mat();
@@ -1045,18 +1049,18 @@ public static class PmEngine
         // Lấy ngưỡng THẤP chứ không phải ngưỡng cao: điểm model sinh ra từ Canny có trễ, một
         // điểm hợp lệ chỉ cần mạnh tới ngưỡng thấp là đủ, đòi nó đạt ngưỡng cao là loại oan.
         //
-        // Model cũ chưa có trường này thì NguongThap = 0, khi đó rơi về NguongBienToiThieu —
-        // rộng rãi nhưng không chết, hơn hẳn việc siết mù như hạn ngạch phân vị cũ.
+        // Model đời trước không có trường này, khi đó NguongThap = 0 và sàn rơi về
+        // NguongBienToiThieu — rộng rãi nhưng vẫn chạy được.
         double sanThap = Math.Max(cfg.NguongBienToiThieu, mm.NguongThap * cfg.HeSoSanChay);
         double sanCao = Math.Max(sanThap + 1, mm.NguongCao * cfg.HeSoSanChay);
 
         // ---- Bước 1: ĐÂU LÀ BIÊN ----
         //
-        // Đây là chỗ train và run trước đây bất đồng, và là lỗi gốc của cả bài. Xem
-        // PmCfg.NmsLucChay.
+        // Train và Run BẮT BUỘC cùng một định nghĩa "biên", nếu không thì điểm số vô nghĩa.
+        // Xem PmCfg.NmsLucChay.
         if (cfg.NmsLucChay)
         {
-            // ĐÚNG hàm mà train đã gọi, đúng cặp ngưỡng của chính mức này nhân HeSoSanChay.
+            // ĐÚNG hàm mà train gọi, đúng cặp ngưỡng của chính mức này nhân HeSoSanChay.
             // Canny tự làm triệt phi cực đại + trễ nên cho ra chuỗi biên MẢNH 1 px, thay vì
             // cả một dải dày mà tư thế nào đặt vào cũng trúng.
             //
@@ -1070,10 +1074,10 @@ public static class PmEngine
         }
         else
         {
-            // Đường cũ giữ nguyên: sàn độ lớn trần trụi. So bằng chuẩn L1 |gx|+|gy|, ĐÚNG như
-            // NguongTuTinh lúc train (nó dùng L1 cho khớp với Canny khi L2gradient = false).
-            // Bản cũ hơn nữa so ngưỡng đó với chuẩn L2 √(gx²+gy²); L1 nằm giữa L2 và √2·L2
-            // nên chỗ đó tự siết thêm 10..27% mà không ai cố ý.
+            // Nhánh không NMS: sàn độ lớn trần trụi, mọi pixel qua sàn đều coi là biên.
+            // So bằng chuẩn L1 |gx|+|gy|, ĐÚNG như NguongTuTinh lúc train (nó dùng L1 cho
+            // khớp với Canny khi L2gradient = false). Đừng đổi sang L2 √(gx²+gy²): L1 nằm
+            // giữa L2 và √2·L2, đổi là tự siết sàn thêm 10..27% mà không ai cố ý.
             for (int o = 0; o < n; o++)
                 if (MathF.Abs(gxs[o]) + MathF.Abs(gys[o]) >= sanThap) am.LaBien[o] = 1;
         }
@@ -1096,9 +1100,10 @@ public static class PmEngine
 
         // ---- Bước 3: TRẢI hướng đó ra quanh biên theo dung sai ----
         //
-        // Sau đây Cham không đọc "gradient của pixel này" nữa mà đọc "hướng của biên gần
-        // nhất, mờ dần theo khoảng cách". Nhờ vậy Cham không phải sửa một dòng nào, mà vẫn
-        // có đúng cái dung sai khoảng cách kiểu PatMax.
+        // Sau bước này, mỗi ô trong Ngx/Ngy không còn mang "gradient của chính pixel đó" mà
+        // mang "hướng của biên GẦN NHẤT, mờ dần theo khoảng cách". Dung sai khoảng cách kiểu
+        // PatMax nằm trọn ở đây, nên Cham vẫn chỉ là một phép tích vô hướng — muốn đổi cách
+        // ghép điểm với biên thì đổi ở bước này, không phải trong Cham.
         double tol = cfg.DungSaiPx;
         if (tol > 1e-6 && soBien > 0)
         {
@@ -1203,45 +1208,45 @@ public static class PmEngine
     }
 
     /// <summary>
-    /// Ve DUNG thu ma <see cref="Cham"/> doc: truong huong gradient sau khi da cat san.
-    /// Den = pixel bi san loai, tuc la voi bo cham diem no khong ton tai. Nhin anh nay la
-    /// biet muc do con giu duoc duong vien nao, hay san da an sach mat canh can tim.
+    /// Vẽ ĐÚNG thứ mà <see cref="Cham"/> đọc: trường hướng gradient sau khi đã cắt sàn.
+    /// Đen = pixel bị sàn loại, tức là với bộ chấm điểm nó không tồn tại. Nhìn ảnh này là
+    /// biết mức đó còn giữ được đường viền nào, hay sàn đã ăn sạch mất cạnh cần tìm.
     ///
-    /// Mau ma hoa huong bang chinh (gx, gy) chu khong qua atan2: mot luot nhan, khong luong
-    /// giac. O muc L0 vai trieu pixel thi rieng atan2 da du lam nguoi ta ngo la treo.
+    /// Màu mã hoá hướng bằng chính (gx, gy) chứ không qua atan2: một lượt nhân, không lượng
+    /// giác. Ở mức L0 vài triệu pixel thì riêng atan2 đã đủ làm người ta ngỡ là treo.
     /// </summary>
     private static Mat VeHuongGradient(MucAnh am)
     {
         var buf = new byte[am.W * am.H * 3];
 
-        // Truong huong chi phu CUA SO (X0,Y0,Wc,Hc), khong phu ca muc. Ban cu do thang chi so
-        // cua so vao anh day nen moi lan Run co cat cua so la anh debug bi truot len goc trai
-        // va bop meo - nhin thi tuong thuat toan hong.
+        // Trường hướng chỉ phủ CỬA SỔ (X0,Y0,Wc,Hc), không phủ cả mức — nên phải cộng X0/Y0
+        // khi đổ ra ảnh đầy. Quên cộng thì ảnh debug trượt lên góc trái và bóp méo, nhìn
+        // tưởng thuật toán hỏng trong khi chỉ hỏng cái ảnh debug.
         for (int yw = 0; yw < am.Hc; yw++)
             for (int xw = 0; xw < am.Wc; xw++)
             {
                 int o = yw * am.Wc + xw;
                 float gx = am.Ngx[o], gy = am.Ngy[o];
-                if (gx == 0 && gy == 0) continue;             // ngoai dung sai -> de den
+                if (gx == 0 && gy == 0) continue;             // ngoài dung sai -> để đen
 
                 int x = am.X0 + xw, y = am.Y0 + yw;
                 if (x < 0 || y < 0 || x >= am.W || y >= am.H) continue;
                 int q = (y * am.W + x) * 3;
 
-                buf[q + 0] = 40;                              // B: nen mo de thay pixel con song
-                buf[q + 1] = (byte)(127 + 127 * gy);          // G theo thanh phan doc
-                buf[q + 2] = (byte)(127 + 127 * gx);          // R theo thanh phan ngang
+                buf[q + 0] = 40;                              // B: nền mờ để thấy pixel còn sống
+                buf[q + 1] = (byte)(127 + 127 * gy);          // G theo thành phần dọc
+                buf[q + 2] = (byte)(127 + 127 * gx);          // R theo thành phần ngang
             }
 
-        // Do thang byte[] vao bo nho Mat. KHONG dung Mat.SetArray o day: no doi kieu phan tu
-        // khop voi MatType, dua byte[] vao CV_8UC3 la nem "Mat data type is not compatible".
-        // Mat vua cap phat luon lien tuc nen Marshal.Copy mot phat la du.
+        // Đổ thẳng byte[] vào bộ nhớ Mat. KHÔNG dùng Mat.SetArray ở đây: nó đòi kiểu phần tử
+        // khớp với MatType, đưa byte[] vào CV_8UC3 là ném "Mat data type is not compatible".
+        // Mat vừa cấp phát luôn liên tục nên Marshal.Copy một phát là đủ.
         var ra = new Mat(am.H, am.W, MatType.CV_8UC3);
         Marshal.Copy(buf, 0, ra.Data, buf.Length);
         return ra;
     }
 
-    /// <summary>Ti le pixel song sot qua san - do thang cua nguong phan vi 0.85.</summary>
+    /// <summary>Tỉ lệ pixel sống sót qua sàn — đo thẳng cái ngưỡng phân vị 0.85.</summary>
     private static double TyLeGiu(MucAnh am)
     {
         int song = 0;
@@ -1287,20 +1292,20 @@ public static class PmEngine
     //  Mặt nạ tự động
     // ==========================================================================
     //
-    // Hai điều đã đo trên D:\images_ (6 dự án) và quyết định hình dạng của mục này:
+    // Hai quy tắc chi phối cả mục này:
     //
-    //  1. KHÔNG có một công thức nào đúng cho mọi dự án. Cùng "min(B,G,R) + Otsu + bao lồi"
-    //     cho ra: 52% trên V2/1240S (đúng), 14.77% trên SIBV/A26 (bao lồi chỉ ôm cái hốc
-    //     giữa, cả khung ngoài — nơi có toàn bộ cạnh đáng train — nằm ngoài mặt nạ),
-    //     72.8% trên SmartTech/TCut (bao lồi cắt chéo mất góc trên-phải), 96.5–100% trên
-    //     Aline/Almus_ (mặt nạ vô nghĩa). Vì vậy kiểu mặt nạ là một LỰA CHỌN của người dùng,
-    //     mặc định Khong, chứ không phải một cái công tắc bật/tắt "chế độ thông minh".
+    //  1. KHÔNG có một công thức mặt nạ nào đúng cho mọi dự án. Cùng một phép
+    //     "min(B,G,R) + Otsu + bao lồi" cho ra mặt nạ đúng ở dự án này và vô nghĩa ở dự án
+    //     khác — có bộ ảnh bao lồi chỉ ôm cái hốc giữa và bỏ cả khung ngoài (nơi có toàn bộ
+    //     cạnh đáng train), có bộ mặt nạ phủ 96–100% tức không lọc gì. Vì vậy kiểu mặt nạ là
+    //     một LỰA CHỌN của người dùng, mặc định Khong, chứ không phải một cái công tắc
+    //     "chế độ thông minh" bật sẵn. Thêm kiểu mới thì thêm vào enum, đừng đoán tự động.
     //
-    //  2. Mặt nạ phải tính TRONG KHUNG ROI, không phải toàn ảnh. Bản cũ chạy Otsu +
-    //     "blob lớn nhất" trên cả tấm 5064²: blob lớn nhất ở đó là vùng nền tối ngoài vòng
-    //     đèn hoặc một con hàng khác, chứ không phải con hàng mà người dùng vừa khoanh.
-    //     Tính trong khung ROI nới NoiKhungMatNa còn nhanh hơn hàng chục lần: Cv2.Split
-    //     một tấm 5064×5064 là ba lần cấp phát 25 MB cho mỗi lần bấm Train.
+    //  2. Mặt nạ phải tính TRONG KHUNG ROI, không phải toàn ảnh. Trên cả tấm 5064² thì blob
+    //     lớn nhất thường là vùng nền tối ngoài vòng đèn hoặc một con hàng khác, chứ không
+    //     phải con hàng người dùng vừa khoanh. Tính trong khung ROI nới NoiKhungMatNa cũng
+    //     rẻ hơn hàng chục lần: Cv2.Split một tấm 5064×5064 là ba lần cấp phát 25 MB cho mỗi
+    //     lần bấm Train.
 
     /// <summary>
     /// Khung tính mặt nạ: hộp bao của ROI nới thêm theo tỉ lệ cạnh, cắt trong ảnh.

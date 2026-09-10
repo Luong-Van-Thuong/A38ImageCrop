@@ -1,0 +1,967 @@
+<title>Từ ảnh tới tư thế</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,600;7..72,700&family=Be+Vietnam+Pro:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+:root{
+  --ground:#F5F7F9;
+  --surface:#FFFFFF;
+  --sunken:#EDF0F4;
+  --ink:#161A20;
+  --ink-2:#525A68;
+  --ink-3:#7B8493;
+  --rule:#D7DDE5;
+  --rule-2:#E7EBF1;
+  --edge:#0B5D8A;
+  --spin:#B24310;
+  --wash-edge:rgba(11,93,138,.09);
+  --wash-spin:rgba(178,67,16,.09);
+  --serif:"Literata",Georgia,"Times New Roman",serif;
+  --sans:"Be Vietnam Pro","Segoe UI",Roboto,Arial,sans-serif;
+  --mono:"JetBrains Mono","Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1216;
+    --surface:#161A20;
+    --sunken:#1C222A;
+    --ink:#E6EAF0;
+    --ink-2:#9AA3B2;
+    --ink-3:#6F7887;
+    --rule:#2A313B;
+    --rule-2:#232932;
+    --edge:#63B9E8;
+    --spin:#F08B57;
+    --wash-edge:rgba(99,185,232,.13);
+    --wash-spin:rgba(240,139,87,.13);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1216;
+  --surface:#161A20;
+  --sunken:#1C222A;
+  --ink:#E6EAF0;
+  --ink-2:#9AA3B2;
+  --ink-3:#6F7887;
+  --rule:#2A313B;
+  --rule-2:#232932;
+  --edge:#63B9E8;
+  --spin:#F08B57;
+  --wash-edge:rgba(99,185,232,.13);
+  --wash-spin:rgba(240,139,87,.13);
+}
+
+body{
+  background:var(--ground);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:16.5px;
+  line-height:1.72;
+  -webkit-font-smoothing:antialiased;
+}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+.page{
+  max-width:1180px;
+  margin:0 auto;
+  padding:0 24px 96px;
+  display:grid;
+  grid-template-columns:1fr;
+  gap:0;
+}
+@media (min-width:1080px){
+  .page{grid-template-columns:210px minmax(0,1fr);gap:56px;padding-right:40px}
+}
+main{max-width:70ch;min-width:0}
+
+.toc{display:none}
+@media (min-width:1080px){
+  .toc{
+    display:block;position:sticky;top:0;align-self:start;
+    padding:120px 0 40px;font-size:13.5px;line-height:1.45;
+  }
+  .toc-title{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-3);margin-bottom:14px;
+  }
+  .toc ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+  .toc a{
+    color:var(--ink-2);text-decoration:none;display:grid;
+    grid-template-columns:26px 1fr;gap:4px;border-left:2px solid transparent;
+    padding-left:10px;margin-left:-12px;
+  }
+  .toc a:hover{color:var(--ink);border-left-color:var(--edge)}
+  .toc a:focus-visible{outline:2px solid var(--edge);outline-offset:3px}
+  .toc .n{font-family:var(--mono);font-size:11px;color:var(--ink-3);padding-top:2px}
+}
+
+.hero{padding:76px 0 12px}
+.eyebrow{
+  font-family:var(--mono);font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 20px;
+}
+h1{
+  font-family:var(--serif);font-weight:700;
+  font-size:clamp(2.3rem,5.4vw,3.35rem);line-height:1.08;
+  letter-spacing:-.018em;margin:0 0 20px;text-wrap:balance;
+}
+.standfirst{
+  font-family:var(--serif);font-size:1.16rem;line-height:1.62;
+  color:var(--ink-2);margin:0 0 34px;max-width:58ch;
+}
+
+.codecard{
+  background:var(--surface);border:1px solid var(--rule);
+  border-radius:3px;padding:26px 26px 20px;margin:0 0 12px;
+}
+.codecard .src{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:16px;
+}
+.codecard .line{
+  font-family:var(--mono);font-size:clamp(.95rem,2.4vw,1.16rem);
+  line-height:1.5;overflow-x:auto;white-space:nowrap;padding-bottom:6px;
+}
+.codecard .gloss{
+  border-top:1px solid var(--rule-2);margin-top:16px;padding-top:14px;
+  font-size:.92rem;color:var(--ink-2);
+}
+
+section{padding:52px 0 0}
+section+section{border-top:1px solid var(--rule-2);margin-top:52px}
+h2{
+  font-family:var(--serif);font-size:1.72rem;line-height:1.22;font-weight:700;
+  letter-spacing:-.012em;margin:0 0 6px;text-wrap:balance;
+}
+.sec-n{
+  font-family:var(--mono);font-size:11px;letter-spacing:.16em;
+  color:var(--spin);display:block;margin-bottom:12px;
+}
+h3{font-family:var(--sans);font-size:1.02rem;font-weight:600;letter-spacing:.005em;margin:34px 0 10px}
+p{margin:0 0 18px}
+strong{font-weight:600}
+a{color:var(--edge)}
+a:focus-visible{outline:2px solid var(--edge);outline-offset:3px;border-radius:2px}
+ul,ol{margin:0 0 18px;padding-left:1.25em}
+li{margin-bottom:9px}
+li::marker{color:var(--ink-3)}
+code{font-family:var(--mono);font-size:.88em;background:var(--sunken);padding:.1em .34em;border-radius:2px}
+
+.ve{color:var(--edge);font-weight:600;font-style:normal}
+.vs{color:var(--spin);font-weight:600;font-style:normal}
+
+.fx{
+  font-family:var(--mono);font-size:1.02rem;line-height:2;text-align:center;
+  background:var(--surface);border:1px solid var(--rule);border-radius:3px;
+  padding:22px 18px;margin:26px 0;overflow-x:auto;
+}
+.fx.key{border-color:var(--spin);border-width:1.5px;background:var(--wash-spin)}
+.fx .cap{
+  display:block;font-family:var(--sans);font-size:.8rem;color:var(--ink-2);
+  margin-top:10px;line-height:1.5;
+}
+
+.box{border-left:2.5px solid var(--rule);padding:2px 0 2px 20px;margin:26px 0}
+.box .tag{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:8px;
+}
+.box p:last-child{margin-bottom:0}
+.box.lab{border-left-color:var(--spin)}
+.box.lab .tag{color:var(--spin)}
+.box.key{border-left-color:var(--edge)}
+.box.key .tag{color:var(--edge)}
+
+.tbl-wrap{overflow-x:auto;margin:24px 0}
+table{border-collapse:collapse;width:100%;font-size:.9rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 14px 9px 0;border-bottom:1px solid var(--rule-2);vertical-align:top}
+th{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:400;border-bottom-color:var(--rule);white-space:nowrap;
+}
+td.num{font-family:var(--mono);white-space:nowrap}
+
+figure{margin:32px 0;padding:0}
+figure svg{display:block;width:100%;height:auto;max-width:100%}
+figcaption{
+  font-size:.86rem;color:var(--ink-2);line-height:1.55;margin-top:12px;
+  padding-top:11px;border-top:1px solid var(--rule-2);
+}
+figcaption b{color:var(--ink);font-weight:600}
+.fig-frame{background:var(--surface);border:1px solid var(--rule);border-radius:3px;padding:20px 18px;overflow-x:auto}
+.s-ink{stroke:var(--ink);fill:none}
+.s-faint{stroke:var(--rule);fill:none}
+.s-mid{stroke:var(--ink-3);fill:none}
+.s-edge{stroke:var(--edge);fill:none}
+.s-spin{stroke:var(--spin);fill:none}
+.f-ink{fill:var(--ink)}
+.f-mid{fill:var(--ink-3)}
+.f-edge{fill:var(--edge)}
+.f-spin{fill:var(--spin)}
+.f-wash-edge{fill:var(--wash-edge)}
+.f-wash-spin{fill:var(--wash-spin)}
+.f-sunken{fill:var(--sunken)}
+.f-surface{fill:var(--surface)}
+.t{font-family:var(--sans);font-size:12.5px;fill:var(--ink)}
+.t-s{font-family:var(--sans);font-size:11px;fill:var(--ink-2)}
+.t-m{font-family:var(--mono);font-size:12px;fill:var(--ink)}
+.t-ms{font-family:var(--mono);font-size:11px;fill:var(--ink-2)}
+.t-edge{font-family:var(--mono);font-size:12.5px;fill:var(--edge);font-weight:700}
+.t-spin{font-family:var(--mono);font-size:12.5px;fill:var(--spin);font-weight:700}
+
+.stage{
+  background:var(--surface);border:1px solid var(--rule);border-radius:3px;
+  padding:16px 20px;margin:22px 0;
+}
+.stage .hd{
+  display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:10px;
+}
+.stage .hd .who{color:var(--spin)}
+.stage .io{
+  font-family:var(--mono);font-size:.86rem;color:var(--ink-2);
+  line-height:1.7;overflow-x:auto;white-space:nowrap;padding-bottom:4px;
+}
+.stage .io b{color:var(--ink);font-weight:400}
+.stage p{margin:12px 0 0;font-size:.95rem}
+
+.broke{margin:26px 0;border-top:1px solid var(--rule)}
+.broke>div{
+  display:grid;grid-template-columns:minmax(150px,auto) minmax(0,1fr);
+  gap:6px 22px;padding:13px 0;border-bottom:1px solid var(--rule-2);
+}
+.broke .k{font-family:var(--mono);font-size:.86rem;color:var(--spin);line-height:1.6}
+.broke .v{font-size:.93rem;color:var(--ink-2);line-height:1.6}
+.broke .v b{color:var(--ink);font-weight:600}
+@media (max-width:560px){.broke>div{grid-template-columns:minmax(0,1fr)}}
+
+.closing{
+  margin-top:56px;padding-top:26px;border-top:1px solid var(--rule);
+  font-size:.9rem;color:var(--ink-3);font-family:var(--mono);line-height:1.7;
+}
+</style>
+
+<div class="page">
+
+<nav class="toc" aria-label="Mục lục">
+  <div class="toc-title">Mạch bài</div>
+  <ol>
+    <li><a href="#s0"><span class="n">00</span><span>Toàn mạch trong một hình</span></a></li>
+    <li><a href="#s1"><span class="n">01</span><span>Train · dựng thẳng</span></a></li>
+    <li><a href="#s2"><span class="n">02</span><span>Train · chọn điểm</span></a></li>
+    <li><a href="#s3"><span class="n">03</span><span>Train · hai con số hình học</span></a></li>
+    <li><a href="#s4"><span class="n">04</span><span>Run · dựng trường hướng</span></a></li>
+    <li><a href="#s5"><span class="n">05</span><span>Run · thô xuống mịn</span></a></li>
+    <li><a href="#s6"><span class="n">06</span><span>Run · nội suy và lọc</span></a></li>
+    <li><a href="#s7"><span class="n">07</span><span>Tích vô hướng</span></a></li>
+    <li><a href="#s8"><span class="n">08</span><span>Vì sao phải có dấu</span></a></li>
+    <li><a href="#s9"><span class="n">09</span><span>Đọc công thức thành hình</span></a></li>
+  </ol>
+</nav>
+
+<main>
+
+<header class="hero">
+  <p class="eyebrow">Bài giảng · A38 ImageCrop · PmAlign</p>
+  <h1>Từ ảnh tới tư thế</h1>
+  <p class="standfirst">Mười ba chặng biến một tấm ảnh 5064×5064 thành ba con số — x, y, góc. Bài này đi hết mạch theo đúng thứ tự code chạy, và ở mỗi chặng dừng lại hỏi một câu duy nhất: <em>vì sao lại là công thức này?</em></p>
+
+  <div class="codecard">
+    <div class="src">PmEngine.cs · dòng 877 · hàm Cham — trái tim của cả engine</div>
+    <div class="line">tong += mgx * gx + mgy * gy;</div>
+    <div class="gloss">Một phép nhân, một phép cộng, lặp sáu mươi lần. Toàn bộ khả năng nhận ra con hàng nằm ở dòng này — và ở <strong>ba tầng chuẩn bị</strong> phía trước nó, thứ mà bài này đi giải nén.</div>
+  </div>
+
+  <div class="box key">
+    <span class="tag">Bài này đọc tiếp từ đâu</span>
+    <p>Bài <strong>Đòn bẩy xoay</strong> (<code>docs/don-bay-xoay.html</code>) dựng lại tích vô hướng và tích có hướng <em>ở mức một điểm</em>, từ vốn toán lớp 11. Bài này không lặp lại chỗ đó — nó lắp một điểm ấy vào cả dây chuyền. Nếu chưa đọc bài kia, đọc mục <a href="#s7">07</a> trước rồi hãy quay lên đầu.</p>
+  </div>
+</header>
+
+<section id="s0">
+  <span class="sec-n">00</span>
+  <h2>Toàn mạch trong một hình</h2>
+
+  <p>Engine chia làm hai nửa chạy ở hai thời điểm khác nhau. <strong>Train</strong> chạy một lần, lúc người vận hành khoanh vùng trên ảnh mẫu; nó đẻ ra một file <code>.pmm.json</code>. <strong>Run</strong> chạy mỗi lần có con hàng mới; nó đọc file đó.</p>
+
+  <p>Điều đáng chú ý nhất trong hình dưới: <em>Run không nhìn thấy ảnh mẫu.</em> Tất cả những gì đi qua được từ nửa trên xuống nửa dưới là nội dung file model — vài chục toạ độ, vài chục vector, và bốn con số. Mọi quyết định thiết kế trong engine đều quy về câu hỏi "cái gì phải cất vào file, cái gì tính lại được".</p>
+
+  <figure>
+    <div class="fig-frame">
+      <svg viewBox="0 0 700 400" role="img" aria-label="Sơ đồ hai nửa Train và Run, nối với nhau chỉ qua file model .pmm.json">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <text class="t-spin" x="24" y="26">TRAIN · một lần</text>
+        <text class="t-ms" x="676" y="26" text-anchor="end">Train() · dòng 36</text>
+
+        <g class="f-surface">
+          <rect x="24"  y="40" width="140" height="52" rx="2" class="s-mid f-sunken"/>
+          <rect x="188" y="40" width="140" height="52" rx="2" class="s-mid f-sunken"/>
+          <rect x="352" y="40" width="140" height="52" rx="2" class="s-mid f-sunken"/>
+          <rect x="516" y="40" width="140" height="52" rx="2" class="s-mid f-sunken"/>
+        </g>
+        <text class="t" x="94"  y="62" text-anchor="middle">Ảnh mẫu + ROI</text>
+        <text class="t-s" x="94" y="79" text-anchor="middle">xoay được</text>
+        <text class="t" x="258" y="62" text-anchor="middle">Dựng thẳng</text>
+        <text class="t-s" x="258" y="79" text-anchor="middle">warp, cất góc φ riêng</text>
+        <text class="t" x="422" y="62" text-anchor="middle">Kim tự tháp</text>
+        <text class="t-s" x="422" y="79" text-anchor="middle">L0 · L1 · … · L5</text>
+        <text class="t" x="586" y="62" text-anchor="middle">Canny + thưa điểm</text>
+        <text class="t-s" x="586" y="79" text-anchor="middle">mỗi ô lưới giữ 1</text>
+
+        <g class="s-mid" stroke-width="1.2" color="var(--ink-3)">
+          <line x1="164" y1="66" x2="184" y2="66" marker-end="url(#ar)"/>
+          <line x1="328" y1="66" x2="348" y2="66" marker-end="url(#ar)"/>
+          <line x1="492" y1="66" x2="512" y2="66" marker-end="url(#ar)"/>
+          <line x1="586" y1="92" x2="586" y2="146" marker-end="url(#ar)"/>
+        </g>
+
+        <rect x="120" y="152" width="460" height="72" rx="2" class="s-spin f-wash-spin" stroke-width="1.5"/>
+        <text class="t-spin" x="140" y="174">model .pmm.json</text>
+        <text class="t-ms" x="140" y="194">điểm (X, Y, Gx, Gy) · ngưỡng Canny thấp/cao</text>
+        <text class="t-ms" x="140" y="212">bán kính · đòn bẩy xoay · góc φ của ROI · mặt nạ che</text>
+
+        <g class="s-spin" stroke-width="1.2" color="var(--spin)" stroke-dasharray="4 3">
+          <line x1="258" y1="224" x2="258" y2="292" marker-end="url(#ar)"/>
+          <line x1="440" y1="224" x2="440" y2="292" marker-end="url(#ar)"/>
+        </g>
+        <text class="t-ms" x="252" y="248" text-anchor="end">ngưỡng</text>
+        <text class="t-ms" x="446" y="248">điểm + bước góc</text>
+
+        <text class="t-spin" x="24" y="284">RUN · mỗi con hàng</text>
+        <text class="t-ms" x="676" y="284" text-anchor="end">Run() · dòng 465</text>
+
+        <g class="f-surface">
+          <rect x="24"  y="298" width="140" height="52" rx="2" class="s-mid f-sunken"/>
+          <rect x="188" y="298" width="140" height="52" rx="2" class="s-mid f-sunken"/>
+          <rect x="352" y="298" width="140" height="52" rx="2" class="s-mid f-sunken"/>
+          <rect x="516" y="298" width="140" height="52" rx="2" class="s-mid f-sunken"/>
+        </g>
+        <text class="t" x="94"  y="320" text-anchor="middle">Ảnh chạy + vùng tìm</text>
+        <text class="t-s" x="94" y="337" text-anchor="middle">cắt patch, nới bán kính</text>
+        <text class="t" x="258" y="320" text-anchor="middle">Trường hướng</text>
+        <text class="t-s" x="258" y="337" text-anchor="middle">NMS + trải dung sai</text>
+        <text class="t" x="422" y="320" text-anchor="middle">Thô → mịn</text>
+        <text class="t-s" x="422" y="337" text-anchor="middle">quét, rồi tinh chỉnh</text>
+        <text class="t" x="586" y="320" text-anchor="middle">Nội suy + lọc</text>
+        <text class="t-s" x="586" y="337" text-anchor="middle">parabol 3 trục</text>
+
+        <g class="s-mid" stroke-width="1.2" color="var(--ink-3)">
+          <line x1="164" y1="324" x2="184" y2="324" marker-end="url(#ar)"/>
+          <line x1="328" y1="324" x2="348" y2="324" marker-end="url(#ar)"/>
+          <line x1="492" y1="324" x2="512" y2="324" marker-end="url(#ar)"/>
+        </g>
+
+        <line x1="586" y1="350" x2="586" y2="376" class="s-edge" stroke-width="1.2" color="var(--edge)" marker-end="url(#ar)"/>
+        <text class="t-edge" x="586" y="392" text-anchor="middle">x, y, góc, điểm</text>
+      </svg>
+    </div>
+    <figcaption><b>Cổ chai là file model.</b> Nửa trên và nửa dưới chạy cách nhau hàng tuần, trên hai tấm ảnh khác nhau, và chỉ trao đổi qua đúng những trường vẽ trong hộp cam. Ngưỡng Canny đi xuống là chi tiết dễ bỏ sót nhất — mục <a href="#s4">04</a>.</figcaption>
+  </figure>
+</section>
+
+<section id="s1">
+  <span class="sec-n">01</span>
+  <h2>Train · dựng thẳng, và cất góc ra chỗ khác</h2>
+
+  <div class="stage">
+    <div class="hd"><span class="who">Chặng 1</span><span>PmEngine.cs:56</span><span>Cv2.WarpAffine</span></div>
+    <div class="io"><b>vào:</b> ảnh mẫu + ROI xoay (tâm, rộng, cao, góc φ) &nbsp;→&nbsp; <b>ra:</b> ảnh mẫu đã dựng thẳng, w×h</div>
+    <p>Người dùng khoanh một hình chữ nhật <em>xoay được</em> quanh con hàng. Warp gỡ góc φ ra, cho con hàng nằm ngang ngay ngắn trong một ảnh w×h.</p>
+  </div>
+
+  <p>Chỗ đáng học không phải phép warp — mà là <strong>góc φ đi đâu</strong>. Nó không bị nướng vào toạ độ điểm. Nó được cất riêng trong <code>model.Roi</code>, rồi đến lúc Run mới lôi ra trừ đi:</p>
+
+  <div class="fx">
+    GocDo = ChuanHoaGocQuanh(g − φ, cfg)
+    <span class="cap">PmEngine.cs:686 — g là góc tìm được trong hệ patch, φ là góc mà người dùng lỡ xoay ROI</span>
+  </div>
+
+  <p>Vì sao phải thế: nếu nướng φ vào toạ độ, thì hai người khoanh cùng một con hàng nhưng một người xoay ROI 5° sẽ nhận về hai model khác nhau, và góc trả về lệch nhau đúng 5° mà không ai giải thích được. Tách ra thì góc trả về luôn có nghĩa <em>"lệch bao nhiêu so với tư thế trên ảnh mẫu"</em> — một câu nói được thành lời.</p>
+
+  <div class="stage">
+    <div class="hd"><span class="who">Chặng 2</span><span>PmEngine.cs:63–113</span><span>TaoMatNaThan · TaoMatNaChe</span></div>
+    <div class="io"><b>vào:</b> ảnh mẫu &nbsp;→&nbsp; <b>ra:</b> mặt nạ <em>thân</em> (được lấy điểm) trừ đi mặt nạ <em>che</em> (don't-care)</div>
+    <p>Otsu tách con hàng khỏi nền, cộng thêm các hình người dùng vẽ tay để bôi đen chỗ không đáng tin.</p>
+  </div>
+
+  <p>Một dòng trong <code>CareChoMuc</code> (dòng 268) đáng dừng lại:</p>
+
+  <div class="fx">
+    care = dilate(thân, đĩa bán kính NoiRongThan) &amp; ¬che
+    <span class="cap">nới thân ra vài pixel TRƯỚC khi cắt vùng che</span>
+  </div>
+
+  <p>Vì sao nới: Otsu cắt <em>đúng ở</em> biên. Không nới thì cạnh ngoài cùng — thứ đáng train nhất trong cả tấm ảnh — nằm ngay trên đường cắt và rơi ra ngoài vùng cho phép. Model sinh ra sẽ toàn điểm bên trong lòng vật, tức toàn vệt phản quang đổi theo góc nghiêng.</p>
+
+  <div class="box lab">
+    <span class="tag">Chốt an toàn đáng chép lại</span>
+    <p>Dòng 70–80: nếu mặt nạ thân giữ lại ít hơn <code>ThanToiThieu</code> phần trăm của mẫu, engine <strong>vứt mặt nạ đi và nói to</strong> thay vì train ra một model ba điểm. Đây là hình mẫu của một loại lỗi không bao giờ ném exception — nó chỉ trả về kết quả rỗng vài tuần sau, ở một máy khác.</p>
+  </div>
+</section>
+
+<section id="s2">
+  <span class="sec-n">02</span>
+  <h2>Train · chọn điểm, và ba công thức trong đó</h2>
+
+  <div class="stage">
+    <div class="hd"><span class="who">Chặng 3–4</span><span>PmEngine.cs:283</span><span>TrichMotMuc</span></div>
+    <div class="io"><b>vào:</b> ảnh mức L<em>i</em> + vùng care &nbsp;→&nbsp; <b>ra:</b> mảng <code>DiemModel(X, Y, Gx, Gy)</code></div>
+    <p>Blur → Sobel dx, dy → tự chọn ngưỡng → Canny → lọc theo care → thưa theo lưới → lưu toạ độ so với tâm.</p>
+  </div>
+
+  <h3>Công thức 1 — hạn ngạch biên tính theo chu vi, không theo diện tích</h3>
+
+  <div class="fx key">
+    can = min( tổng × TiLeBienToiDa, &nbsp;chuVi × HeSoMatDoBien )
+    <span class="cap">NguongTuTinh, dòng 407 — hạ ngưỡng dần cho tới khi số pixel gradient mạnh đạt hạn ngạch này</span>
+  </div>
+
+  <p>Đây là một công thức nói rất nhiều nếu chịu hỏi <em>đơn vị</em>. <code>chuVi</code> là <code>w + h</code>, đơn vị pixel — <strong>một chiều</strong>. Diện tích thì là pixel bình phương — hai chiều. Biên của một vật là một đường, tức là đối tượng một chiều: một con hàng to gấp đôi có chu vi gấp đôi chứ không phải bốn lần.</p>
+
+  <p>Đặt hạn ngạch theo diện tích thì với vật to, hạn ngạch phình theo bình phương trong khi số pixel biên thật chỉ tăng tuyến tính — ngưỡng bị kéo tụt xuống tận vùng nhiễu để cho đủ chỉ tiêu. Đó là kiểu sai <strong>không bao giờ lộ ra trên ảnh mẫu bạn đang thử</strong>, chỉ lộ khi đổi sang bộ ảnh có vật lớn hơn.</p>
+
+  <h3>Công thức 2 — thưa điểm bằng lưới, mỗi ô giữ đúng một</h3>
+
+  <div class="fx">
+    ô = (y / KhoangCachDiem) × số_cột + (x / KhoangCachDiem)
+    <span class="cap">dòng 333–345 — duyệt ứng viên theo độ lớn gradient GIẢM DẦN, ô nào chưa ai chiếm thì nhận</span>
+  </div>
+
+  <p>Duyệt theo thứ tự mạnh dần xuống nên mỗi ô tự động nhận điểm tốt nhất của nó. Vì sao cần thưa: một cạnh dài 300 px cho ra 300 pixel biên liền nhau, tất cả cùng một hướng. Giữ cả 300 thì cạnh ấy chiếm trọn phiếu bầu, và một cạnh ngắn nhưng đặc trưng — cái mấu, cái khuyết — mất hết tiếng nói.</p>
+
+  <div class="box lab">
+    <span class="tag">Cái bẫy đã dính, chép nguyên từ chú thích dòng 348</span>
+    <p>Bản cũ viết trần là <code>ceil(sqrt(w×h / SoDiemToiDa))</code>. Với mẫu 200×200 và tham số 2000, trần thật ra là <strong>5 điểm</strong>. Đặt 2000 mà nhận về 5 — công thức chạy trơn tru, không exception, và sai gấp bốn trăm lần. Đây chính là lý do mục <a href="#s9">09</a> bắt đầu bằng câu hỏi về đơn vị.</p>
+  </div>
+
+  <h3>Công thức 3 — chuẩn hoá gradient về độ dài 1</h3>
+
+  <div class="fx key">
+    Gx = gx / mag,&nbsp;&nbsp; Gy = gy / mag,&nbsp;&nbsp; mag = √(gx² + gy²)
+    <span class="cap">dòng 351 — và đây là chỗ làm điểm số miễn nhiễm với độ sáng</span>
+  </div>
+
+  <p>Sobel trả về hai số: ảnh dốc lên nhanh cỡ nào theo phương ngang, và theo phương dọc. Ghép lại thành mũi tên <span class="ve">g</span>. Mũi tên ấy mang <em>hai</em> thông tin trộn vào nhau: <strong>hướng</strong> (cạnh nằm nghiêng thế nào) và <strong>độ dài</strong> (tương phản mạnh cỡ nào).</p>
+
+  <p>Chia cho độ dài là vứt thông tin thứ hai đi. Vứt có chủ đích: bật đèn sáng gấp đôi thì mọi mũi tên dài gấp đôi, nhưng không mũi tên nào đổi hướng. Giữ độ dài lại thì điểm số của cùng một con hàng sẽ đổi theo đèn — và người ta sẽ đi chỉnh ngưỡng thay vì chỉnh đèn.</p>
+</section>
+
+<section id="s3">
+  <span class="sec-n">03</span>
+  <h2>Train · hai con số hình học rút ra từ tập điểm</h2>
+
+  <div class="stage">
+    <div class="hd"><span class="who">Chặng 5</span><span>PmEngine.cs:365</span><span>TinhLaiHinhHoc</span></div>
+    <div class="io"><b>vào:</b> mảng điểm &nbsp;→&nbsp; <b>ra:</b> <code>BanKinh</code> (px) và <code>DonBayXoay</code> (px mỗi độ)</div>
+  </div>
+
+  <div class="fx">
+    don<sub>i</sub> = X<sub>i</sub>·Gy<sub>i</sub> − Y<sub>i</sub>·Gx<sub>i</sub>
+    <br><br>
+    DonBayXoay = √( Σ don<sub>i</sub>² / N ) × π/180
+  </div>
+
+  <p>Số hạng <code>X·Gy − Y·Gx</code> là <strong>tích có hướng</strong> (thành phần z của <span class="vs">p</span> × <span class="ve">g</span>), và nó trả lời: <em>khi model xoay 1 radian, điểm này trượt bao nhiêu pixel theo phương vuông góc với cạnh của chính nó?</em> Chỉ phương vuông góc mới đáng kể — trượt dọc theo cạnh thì cạnh trông y hệt, không ai đo được.</p>
+
+  <p>Bài <strong>Đòn bẩy xoay</strong> dựng đầy đủ chỗ này, kèm hình và ví dụ số. Ở đây chỉ cần một hệ quả, vì nó chi phối cả nửa Run:</p>
+
+  <div class="fx key">
+    BuocGocDo = 1 / DonBayXoay
+    <span class="cap">PmModel.cs:42 — bước quét góc sao cho model dịch đi đúng MỘT pixel</span>
+  </div>
+
+  <p>Đọc thành lời: <em>quét góc dày hơn mức làm ảnh dịch một pixel là lãng phí; thưa hơn là bỏ sót</em>. Con số này không do người chỉnh mà do <strong>chính hình dạng của con hàng quyết định</strong>. Một hình tròn hoàn hảo có <code>DonBayXoay</code> bằng 0 — gradient hướng tâm nên mọi <code>don<sub>i</sub></code> triệt tiêu — và đúng thật: xoay hình tròn thì không ai biết nó đã xoay.</p>
+
+  <div class="box key">
+    <span class="tag">Vì sao hàm này tách riêng</span>
+    <p>Train-nhiều-ảnh (<code>TrainOnDinh</code>) <em>loại bớt</em> điểm sau khi đã trích. Bỏ điểm mà quên tính lại hai con số này thì bước góc và lề cắt patch vẫn theo model cũ — sai âm thầm. Một công thức, hai chỗ gọi.</p>
+  </div>
+</section>
+
+<section id="s4">
+  <span class="sec-n">04</span>
+  <h2>Run · dựng trường hướng, ba bước</h2>
+
+  <p>Đây là chặng dài nhất và là nơi đã sửa lỗi gốc của cả bài toán. <code>ChuanBiMucAnh</code> (dòng 968) biến một mức ảnh xám thành hai mảng <code>Ngx</code>, <code>Ngy</code> mà hàm chấm điểm sẽ đọc.</p>
+
+  <h3>Bước 1 — đâu là biên, và sàn lấy từ đâu</h3>
+
+  <div class="fx key">
+    sànThấp = max( NguongBienToiThieu, &nbsp;<b>mm.NguongThap</b> × HeSoSanChay )
+    <span class="cap">dòng 1050 — mm.NguongThap là ngưỡng Canny mà chính mức này đã dùng LÚC TRAIN</span>
+  </div>
+
+  <p>Chữ quan trọng nhất trong công thức là <code>mm.</code> — sàn lấy từ <strong>model</strong>, không lấy từ ảnh đang chạy.</p>
+
+  <p>Bản cũ đặt sàn bằng phân vị 0.85 của chính khung tìm kiếm, tức luôn giữ đúng 15% pixel mạnh nhất. Nghe rất hợp lý, và nó là một <strong>hạn ngạch</strong> chứ không phải một ngưỡng. Hạn ngạch hỏng ở mức thô: ở L5 con hàng chỉ chiếm 2,5% khung (22×29 trong 158×158) và cạnh của nó đã bị thu nhỏ 32 lần làm nhoè, nên nó thua suất trước nền. Đo được trên bộ cnc2_: sàn tự tính ra 176…231 trong khi lúc train chỉ lấy từ 93,2 — siết gấp 2…2,5 lần. Hậu quả: đặt model vào <em>đúng chỗ đúng</em>, chỉ 27 trong 59 điểm rơi vào pixel còn sống, và điểm số ra <strong>bằng 0</strong>.</p>
+
+  <p>Còn một hỏng nữa, và nó là dấu hiệu nhận biết mọi thiết kế kiểu hạn ngạch: khoanh vùng tìm kiếm <em>hẹp lại</em> — tức cho tool thêm thông tin — lại làm sàn tăng từ 176 lên 211 và hỏng nặng hơn. Khi cho thêm thông tin mà kết quả tệ đi, công thức đang đo sai thứ.</p>
+
+  <h3>Bước 2 — hướng đơn vị tại pixel biên</h3>
+
+  <p>Giống hệt công thức 3 của mục <a href="#s2">02</a>, cố ý giống: train và run phải cùng một định nghĩa "biên" và cùng một định nghĩa "hướng", nếu không thì điểm 0,9 hay 0,3 đều không nói lên gì về con hàng.</p>
+
+  <h3>Bước 3 — trải hướng ra quanh biên theo dung sai</h3>
+
+  <div class="fx key">
+    w(d) = max( 0, &nbsp;1 − d / DungSaiPx )
+    <br>
+    Ngx[o] = w · hx[<em>biên gần nhất</em>],&nbsp;&nbsp; Ngy[o] = w · hy[<em>biên gần nhất</em>]
+    <span class="cap">dòng 1104–1117 — d là khoảng cách chamfer tới pixel biên gần nhất</span>
+  </div>
+
+  <figure>
+    <div class="fig-frame">
+      <svg viewBox="0 0 700 250" role="img" aria-label="So sánh trường hướng không dung sai và có dung sai: điểm model lệch 1.4 pixel được 0 điểm ở bên trái, được 0.3 ở bên phải">
+        <g>
+          <text class="t-ms" x="24" y="22">DungSaiPx = 0 · đọc đúng một pixel</text>
+          <g class="s-faint" stroke-width="1">
+            <path d="M40 50 h240 M40 74 h240 M40 98 h240 M40 122 h240 M40 146 h240 M40 170 h240"/>
+            <path d="M40 50 v120 M64 50 v120 M88 50 v120 M112 50 v120 M136 50 v120 M160 50 v120 M184 50 v120 M208 50 v120 M232 50 v120 M256 50 v120 M280 50 v120"/>
+          </g>
+          <g class="f-wash-edge">
+            <rect x="112" y="50" width="24" height="24"/>
+            <rect x="112" y="74" width="24" height="24"/>
+            <rect x="136" y="98" width="24" height="24"/>
+            <rect x="136" y="122" width="24" height="24"/>
+            <rect x="160" y="146" width="24" height="24"/>
+          </g>
+          <g class="s-edge" stroke-width="2" color="var(--edge)">
+            <line x1="124" y1="62" x2="140" y2="62"/>
+            <line x1="124" y1="86" x2="140" y2="86"/>
+            <line x1="148" y1="110" x2="164" y2="110"/>
+            <line x1="148" y1="134" x2="164" y2="134"/>
+            <line x1="172" y1="158" x2="188" y2="158"/>
+          </g>
+          <circle cx="184" cy="110" r="4.5" class="f-spin"/>
+          <text class="t-spin" x="196" y="106">điểm model</text>
+          <text class="t-ms" x="196" y="122">lệch 1,4 px</text>
+          <text class="t-spin" x="40" y="196">đóng góp = 0</text>
+          <text class="t-ms" x="40" y="214">ô đó trống ⇒ mất phiếu, dù chỉ trượt hơn một pixel</text>
+        </g>
+
+        <line x1="330" y1="30" x2="330" y2="220" class="s-faint" stroke-width="1"/>
+
+        <g transform="translate(360,0)">
+          <text class="t-ms" x="24" y="22">DungSaiPx = 2 · trải hướng ra quanh biên</text>
+          <g class="s-faint" stroke-width="1">
+            <path d="M40 50 h240 M40 74 h240 M40 98 h240 M40 122 h240 M40 146 h240 M40 170 h240"/>
+            <path d="M40 50 v120 M64 50 v120 M88 50 v120 M112 50 v120 M136 50 v120 M160 50 v120 M184 50 v120 M208 50 v120 M232 50 v120 M256 50 v120 M280 50 v120"/>
+          </g>
+          <g fill="var(--edge)">
+            <g opacity=".55">
+              <rect x="112" y="50" width="24" height="24"/><rect x="112" y="74" width="24" height="24"/>
+              <rect x="136" y="98" width="24" height="24"/><rect x="136" y="122" width="24" height="24"/>
+              <rect x="160" y="146" width="24" height="24"/>
+            </g>
+            <g opacity=".26">
+              <rect x="88" y="50" width="24" height="24"/><rect x="136" y="50" width="24" height="24"/>
+              <rect x="88" y="74" width="24" height="24"/><rect x="136" y="74" width="24" height="24"/>
+              <rect x="112" y="98" width="24" height="24"/><rect x="160" y="98" width="24" height="24"/>
+              <rect x="112" y="122" width="24" height="24"/><rect x="160" y="122" width="24" height="24"/>
+              <rect x="136" y="146" width="24" height="24"/><rect x="184" y="146" width="24" height="24"/>
+            </g>
+            <g opacity=".11">
+              <rect x="64" y="50" width="24" height="24"/><rect x="160" y="50" width="24" height="24"/>
+              <rect x="64" y="74" width="24" height="24"/><rect x="160" y="74" width="24" height="24"/>
+              <rect x="88" y="98" width="24" height="24"/><rect x="184" y="98" width="24" height="24"/>
+              <rect x="88" y="122" width="24" height="24"/><rect x="184" y="122" width="24" height="24"/>
+              <rect x="112" y="146" width="24" height="24"/><rect x="208" y="146" width="24" height="24"/>
+            </g>
+          </g>
+          <g class="s-edge" stroke-width="2" color="var(--edge)">
+            <line x1="124" y1="62" x2="140" y2="62"/>
+            <line x1="124" y1="86" x2="140" y2="86"/>
+            <line x1="148" y1="110" x2="164" y2="110"/>
+            <line x1="148" y1="134" x2="164" y2="134"/>
+            <line x1="172" y1="158" x2="188" y2="158"/>
+          </g>
+          <circle cx="184" cy="110" r="4.5" class="f-spin"/>
+          <text class="t-spin" x="196" y="106">cùng điểm ấy</text>
+          <text class="t-ms" x="196" y="122">w = 1 − 1,4/2 = 0,3</text>
+          <text class="t-spin" x="40" y="196">đóng góp = 0,3 × cos</text>
+          <text class="t-ms" x="40" y="214">giữ hướng của biên gần nhất, chỉ mờ đi theo khoảng cách</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Dung sai không làm biên dày lên — nó làm biên <em>toả</em> ra.</b> Mọi ô trong vùng toả đều mang <em>hướng của cùng một pixel biên</em>, chỉ khác trọng số. Nhờ vậy hàm <code>Cham</code> không phải sửa một dòng nào mà vẫn có dung sai khoảng cách kiểu PatMax.</figcaption>
+  </figure>
+
+  <p>Vì sao trọng số <strong>tuyến tính</strong> chứ không Gauss hay bậc hai: hai cái kia có đạo hàm bằng 0 tại d = 0, tức đỉnh <em>bẹt</em>. Mà toàn bộ phần nội suy dưới pixel ở chặng sau sống nhờ đỉnh <em>nhọn</em>. Chọn hàm trọng số ở đây là đang chọn hình dạng của đỉnh mà ba chặng nữa mới dùng tới.</p>
+
+  <div class="tbl-wrap">
+    <table>
+      <caption class="t-s" style="text-align:left;color:var(--ink-3);font-size:.8rem;padding-bottom:10px">Đo trên <code>--tu-kiem</code>, chân lý biết trước, 6 ca</caption>
+      <thead><tr><th>Dung sai</th><th>Sai vị trí</th><th>Sai góc</th></tr></thead>
+      <tbody>
+        <tr><td class="num">0 (bản cũ)</td><td class="num">0,70 px</td><td class="num">0,172°</td></tr>
+        <tr><td class="num">1</td><td class="num">1,33 px</td><td class="num">0,107°</td></tr>
+        <tr><td class="num">2</td><td class="num">1,09 px</td><td class="num">0,107°</td></tr>
+        <tr><td class="num">3</td><td class="num">1,02 px</td><td class="num">0,091°</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Lo ban đầu là "dung sai làm bẹt đỉnh, mất độ chính xác dưới pixel" — <strong>sai một nửa</strong>. Vị trí có kém đi nhưng vẫn trong ngưỡng 2 px, còn góc thì tốt lên ở mọi mức dung sai. Đổi lại là dò trúng chỗ trên ba tấm mà bản cũ trượt hẳn.</p>
+</section>
+
+<section id="s5">
+  <span class="sec-n">05</span>
+  <h2>Run · thô xuống mịn</h2>
+
+  <div class="stage">
+    <div class="hd"><span class="who">Chặng 8</span><span>PmEngine.cs:566–607</span><span>mức thô</span></div>
+    <div class="io"><b>vào:</b> mọi (x, y) trong vùng cho phép × mọi góc trong dải &nbsp;→&nbsp; <b>ra:</b> vài chục ứng viên</div>
+  </div>
+  <div class="stage">
+    <div class="hd"><span class="who">Chặng 9</span><span>PmEngine.cs:609–645</span><span>tinh chỉnh từng mức</span></div>
+    <div class="io"><b>vào:</b> ứng viên mức cha &nbsp;→&nbsp; <b>ra:</b> ứng viên mức con, toạ độ ×2, dò lại ±3 px</div>
+  </div>
+
+  <figure>
+    <div class="fig-frame">
+      <svg viewBox="0 0 700 260" role="img" aria-label="Phễu thô xuống mịn: mức thô quét toàn bộ với pixel rất lớn, các mức sau chỉ tinh chỉnh quanh ứng viên">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <text class="t-ms" x="24" y="20">mức</text>
+        <text class="t-ms" x="86" y="20">1 px của mức này =</text>
+        <text class="t-ms" x="250" y="20">việc phải làm</text>
+        <text class="t-ms" x="676" y="20" text-anchor="end">chi phí</text>
+
+        <g>
+          <rect x="24" y="32" width="652" height="1" class="f-mid" opacity=".35"/>
+        </g>
+
+        <g class="t-m">
+          <text x="24" y="60">L5</text><text x="24" y="102">L4</text><text x="24" y="144">L3</text>
+          <text x="24" y="186">L2</text><text x="24" y="228">L0</text>
+        </g>
+        <g class="t-ms">
+          <text x="86" y="60">32 px ảnh gốc</text>
+          <text x="86" y="102">16 px</text>
+          <text x="86" y="144">8 px</text>
+          <text x="86" y="186">4 px</text>
+          <text x="86" y="228">1 px</text>
+        </g>
+
+        <g class="f-wash-spin">
+          <rect x="250" y="44" width="330" height="22" rx="2"/>
+        </g>
+        <g class="f-wash-edge">
+          <rect x="250" y="86" width="120" height="22" rx="2"/>
+          <rect x="250" y="128" width="86" height="22" rx="2"/>
+          <rect x="250" y="170" width="64" height="22" rx="2"/>
+          <rect x="250" y="212" width="48" height="22" rx="2"/>
+        </g>
+        <g class="s-spin" stroke-width="1.2" fill="none"><rect x="250" y="44" width="330" height="22" rx="2"/></g>
+        <g class="s-edge" stroke-width="1" fill="none">
+          <rect x="250" y="86" width="120" height="22" rx="2"/>
+          <rect x="250" y="128" width="86" height="22" rx="2"/>
+          <rect x="250" y="170" width="64" height="22" rx="2"/>
+          <rect x="250" y="212" width="48" height="22" rx="2"/>
+        </g>
+
+        <text class="t-s" x="262" y="59">quét TOÀN vùng × TOÀN dải góc</text>
+        <text class="t-s" x="382" y="101">±3 px, ±1 bước góc</text>
+        <text class="t-s" x="348" y="143">±3 px</text>
+        <text class="t-s" x="326" y="185">±3 px</text>
+        <text class="t-s" x="310" y="227">±3 px, rồi nội suy</text>
+
+        <text class="t-ms" x="676" y="59" text-anchor="end">phần lớn thời gian</text>
+        <text class="t-ms" x="676" y="101" text-anchor="end">rẻ</text>
+        <text class="t-ms" x="676" y="143" text-anchor="end">rẻ</text>
+        <text class="t-ms" x="676" y="185" text-anchor="end">rẻ</text>
+        <text class="t-ms" x="676" y="227" text-anchor="end">rẻ</text>
+
+        <line x1="238" y1="44" x2="238" y2="234" class="s-mid" stroke-width="1.2" color="var(--ink-3)" marker-end="url(#ar2)"/>
+        <text class="t-ms" x="232" y="140" text-anchor="end" transform="rotate(-90 232 140)">thô → mịn</text>
+      </svg>
+    </div>
+    <figcaption><b>Chỉ mức thô nhất là thật sự đi tìm.</b> Mọi mức dưới chỉ hỏi lại một câu hẹp: <em>quanh chỗ này, ±3 pixel, có chỗ nào tốt hơn không</em>. Vì thế thu hẹp <b>vùng tìm</b> lời hơn hẳn thu hẹp <b>dải góc</b> — nó cắt vào đúng hàng trên cùng.</figcaption>
+  </figure>
+
+  <div class="box lab">
+    <span class="tag">Vì sao gom ứng viên theo TỪNG GÓC một</span>
+    <p>Ở L5 một pixel bằng 32 pixel ảnh gốc. Gom chung tất cả các góc rồi mới cắt theo điểm thì vài chục tư thế <em>sai góc nhưng gần đúng chỗ</em> chiếm hết suất và đẩy văng giả thuyết góc đúng. Đo được: góc đúng 23,7° bị loại sạch trong khi mức thô vẫn báo điểm cao nhất 0,927 — rồi tinh chỉnh xuống L0 ra 0,000. Một con số cao ở mức thô <strong>không</strong> có nghĩa là mọi thứ ổn.</p>
+  </div>
+
+  <p>Còn một chi tiết nhìn như tối ưu vặt mà thật ra là chuyện đúng/sai. Toàn bộ phần tinh chỉnh nhân toạ độ với 2 khi xuống một mức (<code>u.X * 2</code>), tức ngầm coi mức <em>i</em> có kích thước đúng bằng W/2<sup><em>i</em></sup>. Kích thước thật là <code>round(W/2^i)</code>. Với patch rộng 1917 thì L5 là 60, mà 60 × 32 = 1920 ≠ 1917 — mép phải lệch tới 3 px, và lệch đó phải nằm gọn trong cửa sổ dò ±3 px mới không mất vật. Nên trước khi quét, patch được kéo cạnh thành bội của 2<sup>số mức−1</sup> (<code>LamTronBoi</code>, dòng 496).</p>
+</section>
+
+<section id="s6">
+  <span class="sec-n">06</span>
+  <h2>Run · nội suy dưới pixel, rồi lọc</h2>
+
+  <div class="fx key">
+    δ = ½ · (s₋ − s₊) / (s₋ − 2s₀ + s₊)
+    <span class="cap">Dinh1D, dòng 859 — đỉnh của parabol đi qua ba điểm cách đều</span>
+  </div>
+
+  <figure>
+    <div class="fig-frame">
+      <svg viewBox="0 0 620 240" role="img" aria-label="Ba mẫu điểm cách đều và parabol đi qua chúng, đỉnh nằm giữa hai mẫu">
+        <g class="s-faint" stroke-width="1">
+          <line x1="60" y1="200" x2="560" y2="200"/>
+        </g>
+        <path d="M120 176 Q 300 20 480 128" class="s-spin" stroke-width="1.6" fill="none" opacity=".85"/>
+        <g class="f-edge">
+          <circle cx="180" cy="120" r="5"/>
+          <circle cx="300" cy="62" r="5"/>
+          <circle cx="420" cy="86" r="5"/>
+        </g>
+        <g class="s-faint" stroke-width="1" stroke-dasharray="3 3">
+          <line x1="180" y1="120" x2="180" y2="200"/>
+          <line x1="300" y1="62" x2="300" y2="200"/>
+          <line x1="420" y1="86" x2="420" y2="200"/>
+        </g>
+        <text class="t-edge" x="180" y="112" text-anchor="middle">s₋</text>
+        <text class="t-edge" x="300" y="54" text-anchor="middle">s₀</text>
+        <text class="t-edge" x="420" y="78" text-anchor="middle">s₊</text>
+        <text class="t-ms" x="180" y="218" text-anchor="middle">x − 1</text>
+        <text class="t-ms" x="300" y="218" text-anchor="middle">x</text>
+        <text class="t-ms" x="420" y="218" text-anchor="middle">x + 1</text>
+
+        <line x1="332" y1="44" x2="332" y2="200" class="s-spin" stroke-width="1.6"/>
+        <circle cx="332" cy="44" r="4.5" class="f-spin"/>
+        <text class="t-spin" x="344" y="40">đỉnh thật</text>
+        <text class="t-ms" x="344" y="56">x + δ,&nbsp; δ ≈ 0,27</text>
+
+        <text class="t-s" x="60" y="30">điểm khớp</text>
+        <text class="t-ms" x="560" y="218" text-anchor="end">vị trí (hoặc góc)</text>
+      </svg>
+    </div>
+    <figcaption><b>Ba mẫu là đủ để định một parabol, và parabol có đúng một đỉnh.</b> Cùng công thức chạy ba lần trên ba trục độc lập — x, y, và góc — vì quanh đỉnh, mặt điểm số xấp xỉ được bằng ba parabol rời nhau. Đây là thứ README cũ ghi là còn thiếu so với CogPMAlign.</figcaption>
+  </figure>
+
+  <p>Vì sao được phép tách ba trục: đây là <em>xấp xỉ</em>, không phải chân lý. Nó đúng khi đỉnh khá tròn và ba mẫu đã nằm sát đỉnh — điều mà chặng tinh chỉnh vừa lo xong. Nếu đỉnh nghiêng (x và góc bù trừ cho nhau) thì tách trục sẽ lệch, và đó chính là chỗ mà <strong>fit pose bằng bình phương tối thiểu</strong> sẽ thay thế được.</p>
+
+  <div class="box key">
+    <span class="tag">Một dòng chốt an toàn, dòng 855</span>
+    <p><code>return nd &gt;= s0 ? (nx, ny, ng, nd) : (x, y, g, s0);</code> — nội suy chỉ được phép <em>tinh chỉnh</em>, không được phép làm điểm tụt. Tụt là dấu hiệu đỉnh không phải parabol, khi đó giữ nguyên kết quả nguyên pixel. Mọi phép xấp xỉ nên có một dòng như thế.</p>
+  </div>
+
+  <h3>Ba cửa lọc, theo đúng thứ tự</h3>
+  <ol>
+    <li><strong>Tâm phải nằm trong vùng tìm kiếm.</strong> Ngữ nghĩa lấy đúng của Cognex: vùng tìm giới hạn nơi <em>tâm</em> được phép nằm, không phải nơi toàn bộ mẫu phải lọt vào. Vì thế patch cắt ra phải nới thêm đúng bán kính model.</li>
+    <li><strong>Điểm ≥ DiemToiThieu.</strong></li>
+    <li><strong>Clutter ≤ ClutterToiDa.</strong> Clutter = tỉ lệ pixel biên nằm trong dấu chân model mà model <em>không</em> giải thích được. Vùng don't-care không vào tử số và cũng không vào mẫu số — đếm nó vào mẫu số là biến vùng mình cố tình bỏ qua thành bằng chứng buộc tội.</li>
+  </ol>
+
+  <p>Rồi gộp trùng lần cuối. Ở mức thô, <code>LocTrung</code> xét <em>cả góc</em> — hai tư thế cùng chỗ khác góc là hai giả thuyết khác nhau. Ở cuối mạch nó chỉ xét vị trí — đến đây các giả thuyết đã hội tụ, cùng chỗ nghĩa là cùng một vật.</p>
+</section>
+
+<section id="s7">
+  <span class="sec-n">07</span>
+  <h2>Tích vô hướng — cái cân đo sự song song</h2>
+
+  <p>Giờ mới tới trung tâm. Toàn bộ chuẩn bị ở trên tồn tại để dòng này có nghĩa:</p>
+
+  <div class="fx key">
+    t<sub>i</sub> = mgx · gx + mgy · gy
+    <span class="cap">DongGop, dòng 909 — mg là hướng của điểm model SAU KHI XOAY, g là hướng đọc từ ảnh</span>
+  </div>
+
+  <p>Hai vector đều đã chuẩn hoá về độ dài 1. Với hai vector đơn vị, tích vô hướng <strong>chính là cosin của góc lệch giữa chúng</strong>. Không phải "liên quan tới", mà bằng đúng. Đó là toàn bộ lý do chọn phép toán này: ta cần một cái cân trả lời <em>hai mũi tên này song song cỡ nào</em>, và cosin là cái cân đó — có sẵn, một phép nhân một phép cộng, không lượng giác.</p>
+
+  <figure>
+    <div class="fig-frame">
+      <svg viewBox="0 0 700 210" role="img" aria-label="Ba trường hợp tích vô hướng: cùng hướng bằng 1, lệch 60 độ bằng 0.5, ngược hướng bằng trừ 1">
+        <defs>
+          <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <g transform="translate(120,110)">
+          <line x1="0" y1="0" x2="0" y2="-64" class="s-edge" stroke-width="2.4" color="var(--edge)" marker-end="url(#ar3)"/>
+          <line x1="0" y1="0" x2="0" y2="-64" class="s-spin" stroke-width="2.4" color="var(--spin)" marker-end="url(#ar3)" transform="translate(7,0)"/>
+          <circle cx="0" cy="0" r="3" class="f-ink"/>
+          <text class="t-m" x="0" y="34" text-anchor="middle">α = 0°</text>
+          <text class="t-spin" x="0" y="56" text-anchor="middle">t = +1,00</text>
+          <text class="t-s" x="0" y="78" text-anchor="middle">khớp hoàn hảo</text>
+        </g>
+
+        <g transform="translate(350,110)">
+          <line x1="0" y1="0" x2="0" y2="-64" class="s-edge" stroke-width="2.4" color="var(--edge)" marker-end="url(#ar3)"/>
+          <line x1="0" y1="0" x2="55.4" y2="-32" class="s-spin" stroke-width="2.4" color="var(--spin)" marker-end="url(#ar3)"/>
+          <path d="M0 -30 A 30 30 0 0 1 26 -15" class="s-mid" stroke-width="1" fill="none"/>
+          <text class="t-ms" x="26" y="-34">60°</text>
+          <circle cx="0" cy="0" r="3" class="f-ink"/>
+          <text class="t-m" x="0" y="34" text-anchor="middle">α = 60°</text>
+          <text class="t-spin" x="0" y="56" text-anchor="middle">t = +0,50</text>
+          <text class="t-s" x="0" y="78" text-anchor="middle">một nửa phiếu</text>
+        </g>
+
+        <g transform="translate(580,110)">
+          <line x1="0" y1="0" x2="0" y2="-64" class="s-edge" stroke-width="2.4" color="var(--edge)" marker-end="url(#ar3)"/>
+          <line x1="0" y1="0" x2="0" y2="64" class="s-spin" stroke-width="2.4" color="var(--spin)" marker-end="url(#ar3)"/>
+          <circle cx="0" cy="0" r="3" class="f-ink"/>
+          <text class="t-m" x="0" y="34" text-anchor="middle">α = 180°</text>
+          <text class="t-spin" x="0" y="56" text-anchor="middle">t = −1,00</text>
+          <text class="t-s" x="0" y="78" text-anchor="middle">cạnh ngược chiều</text>
+        </g>
+
+        <text class="t-edge" x="24" y="26">hướng đọc từ ảnh</text>
+        <text class="t-spin" x="24" y="44">hướng model đã xoay</text>
+      </svg>
+    </div>
+    <figcaption><b>Cosin cho một thang liên tục, không phải một câu trả lời có/không.</b> Cạnh lệch 10° vẫn được 0,98 — model chịu được biến dạng nhẹ mà không cần luật riêng nào. Cột thứ ba là chỗ mục <a href="#s8">08</a> bắt đầu.</figcaption>
+  </figure>
+
+  <p>Vector model được xoay <em>ngay tại chỗ</em> trước khi so, bằng đúng công thức quay của <code>RectXoay</code>:</p>
+
+  <div class="fx">
+    mgx = Gx·c + Gy·s,&nbsp;&nbsp; mgy = −Gx·s + Gy·c
+    <span class="cap">c = cos θ, s = sin θ — tính MỘT lần cho cả tư thế, không tính lại cho từng điểm</span>
+  </div>
+
+  <h3>Từ một điểm lên cả model — và hai phép chia</h3>
+
+  <div class="fx key">
+    Cham = max( 0, &nbsp;( Σt<sub>i</sub>/N − Nen ) / ( 1 − Nen ) )
+    <span class="cap">dòng 877–883</span>
+  </div>
+
+  <p><strong>Chia cho N</strong> là để con số không phụ thuộc model có bao nhiêu điểm. Không chia thì model 300 điểm luôn ăn điểm cao hơn model 60 điểm, và hai model không so được với nhau — cũng có nghĩa là một ngưỡng chung không tồn tại.</p>
+
+  <p><strong>Trừ <code>Nen</code> rồi chia cho (1 − Nen)</strong> là một phép <em>kéo giãn thang đo</em>, và nó đáng một đoạn riêng.</p>
+
+  <p>Đặt câu hỏi: một tư thế <em>hoàn toàn ngẫu nhiên</em> — model úp bừa lên một chỗ vô nghĩa — thì được bao nhiêu điểm? Nếu con số đó không phải 0, thì mọi điểm số đều bị cộng thêm một khoản vô nghĩa, và ngưỡng người ta chọn thật ra chỉ đang trừ khoản ấy đi bằng tay.</p>
+
+  <p>Với đường chạy cũ (bỏ dấu, không NMS, không dung sai) thì mọi pixel đều có hướng, góc lệch phân bố đều, và trung bình của |cos| trên góc ngẫu nhiên là</p>
+
+  <div class="fx">
+    E[ |cos α| ] = 2/π ≈ 0,637
+  </div>
+
+  <p>Nên nền phải trừ đúng 0,637, rồi chia (1 − 0,637) để trải phần còn lại ra kín đoạn 0…1. Sau khi bật NMS, phần lớn điểm model rơi vào chỗ trống và đóng góp 0; có dung sai thì đóng góp còn bị nhân w &lt; 1. Trừ 0,637 trong hai trường hợp đó là <strong>trừ oan</strong> — mọi thứ về 0 sạch. Khi ấy <code>Nen</code> đúng bằng 0.</p>
+
+  <div class="box lab">
+    <span class="tag">Bài học về hằng số viết cứng</span>
+    <p>Con số 2/π từng nằm cứng trong công thức. Nó <em>đúng</em> — cho đúng một cấu hình. Khi cấu hình đổi, nó lặng lẽ trở thành sai, và triệu chứng là "điểm số bỗng dưng về 0 hết" chứ không phải một lỗi đọc được. Mọi hằng số rơi từ trời xuống trong một công thức đều có một giả thiết đứng sau nó; giả thiết ấy phải viết ra thành một trường như <code>MucAnh.Nen</code>, chứ không phải một chú thích.</p>
+  </div>
+
+  <p>Cuối cùng, <code>max(0, …)</code>: điểm âm không mang thêm thông tin nào — "tệ hơn ngẫu nhiên" và "tệ hơn ngẫu nhiên rất nhiều" đều chỉ có nghĩa là loại.</p>
+</section>
+
+<section id="s8">
+  <span class="sec-n">08</span>
+  <h2>Vì sao phải có dấu — gờ và bậc</h2>
+
+  <p>Có thể lấy <code>|t|</code> thay vì <code>t</code>. Nghe rất hợp lý: ta quan tâm cạnh nằm ở đâu, chứ bên nào sáng hơn thì liên quan gì? Cognex cũng có đúng núm ấy (<code>IgnorePolarity</code>) — và <strong>mặc định của họ là tắt</strong>. Đây là lý do vật lý.</p>
+
+  <figure>
+    <div class="fig-frame">
+      <svg viewBox="0 0 700 250" role="img" aria-label="Mặt cắt độ sáng: cạnh vật là một bậc với một mũi tên gradient, vết xước là một gờ với hai mũi tên ngược dấu">
+        <defs>
+          <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+            <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <g>
+          <text class="t-spin" x="24" y="24">CẠNH VẬT = một BẬC</text>
+          <line x1="40" y1="180" x2="300" y2="180" class="s-faint" stroke-width="1"/>
+          <path d="M40 150 H150 L170 72 H300" class="s-ink" stroke-width="2" fill="none"/>
+          <line x1="160" y1="150" x2="160" y2="86" class="s-edge" stroke-width="2.4" color="var(--edge)" marker-end="url(#ar4)"/>
+          <text class="t-ms" x="46" y="166">tối</text>
+          <text class="t-ms" x="284" y="66" text-anchor="end">sáng</text>
+          <text class="t-edge" x="172" y="118">một dấu</text>
+          <text class="t-s" x="40" y="206">Sáng đổi một lần, không quay lại.</text>
+          <text class="t-s" x="40" y="226">Mọi pixel biên ở đây có gradient CÙNG chiều.</text>
+        </g>
+
+        <line x1="340" y1="16" x2="340" y2="234" class="s-faint" stroke-width="1"/>
+
+        <g transform="translate(360,0)">
+          <text class="t-spin" x="24" y="24">VẾT XƯỚC = một GỜ</text>
+          <line x1="40" y1="180" x2="300" y2="180" class="s-faint" stroke-width="1"/>
+          <path d="M40 150 H120 L140 72 H190 L210 150 H300" class="s-ink" stroke-width="2" fill="none"/>
+          <line x1="130" y1="150" x2="130" y2="86" class="s-edge" stroke-width="2.4" color="var(--edge)" marker-end="url(#ar4)"/>
+          <line x1="200" y1="86" x2="200" y2="150" class="s-edge" stroke-width="2.4" color="var(--edge)" marker-end="url(#ar4)"/>
+          <text class="t-edge" x="140" y="110">+</text>
+          <text class="t-edge" x="208" y="110">−</text>
+          <text class="t-s" x="40" y="206">Sáng lên rồi tối lại: hai mép NGƯỢC dấu.</text>
+          <text class="t-s" x="40" y="226">Bỏ dấu thì mép phải trông y hệt mép trái.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Đây là chỗ phân biệt cạnh thật với vết xước, và nó nằm trong dấu chứ không nằm trong hướng.</b> Trên nền thép xước của bộ JeaYoung/Coil, chính vùng xước là nơi tool bắt sai.</figcaption>
+  </figure>
+
+  <p>Và đây là chỗ dễ suy sai nhất trong cả engine, nên nói thẳng bằng số đo. Bật NMS lúc chạy làm biên mảnh 1 px — nghe như chỉ có lợi. Nhưng bật NMS mà <em>vẫn</em> lấy |cos| thì top-1 <strong>tụt</strong> từ 31/34 xuống 24/34, tệ hơn cả bản cũ. Lý do: biên mảnh đi chỉ làm mỗi vết xước thành <em>hai đường sắc nét</em> khớp còn ngọt hơn, khi không có dấu để phân biệt gờ với bậc.</p>
+
+  <div class="broke">
+    <div><span class="k">NmsLucChay</span><span class="v">Trích <b>chuỗi biên</b> thay vì một trường gradient đặc. Nền thưa đi thì tư thế ngẫu nhiên hầu như không trúng gì — đây là khả năng <b>từ chối</b>.</span></div>
+    <div><span class="k">DungSaiPx &gt; 0</span><span class="v">Biên mảnh 1 px mà chấm điểm không có dung sai thì <b>đỉnh đúng cũng chết theo</b>. Bắt buộc đi kèm NMS.</span></div>
+    <div><span class="k">có dấu</span><span class="v">Thứ duy nhất phân biệt <b>gờ</b> với <b>bậc</b>. Thiếu nó thì hai cái trên phản tác dụng.</span></div>
+  </div>
+
+  <p>Ba núm ấy là <strong>một gói</strong>. Bật lẻ từng cái là hỏng, và mỗi cái bật lẻ đều hỏng theo một kiểu khác nhau — đó là vì sao đọc code suy ngược từng núm một sẽ ra ba kết luận rời rạc, không ra bức tranh. Bật cả gói: 31/34 → <strong>34/34</strong>, và <code>--tu-kiem</code> từ 0,150° xuống 0,072°.</p>
+
+  <div class="box lab">
+    <span class="tag">Chuyện chưa xong</span>
+    <p>Định vị đã xong, nhưng <strong>biên vẫn âm</strong> ở mọi cấu hình (tốt nhất −0,023). Biên ở đây là (đỉnh ĐÚNG thấp nhất) − (đỉnh SAI cao nhất); âm nghĩa là không tồn tại một ngưỡng chung tách sạch đúng/sai. Việc tiếp theo đáng làm nhất là <strong>fit pose bằng bình phương tối thiểu</strong> — PatMax ghép điểm với feature rồi <em>giải</em> pose, ta mới nội suy parabol quanh đỉnh; và phần dư của phép fit đó là một thước đo <em>khác bản chất</em> với điểm khớp.</p>
+  </div>
+</section>
+
+<section id="s9">
+  <span class="sec-n">09</span>
+  <h2>Đọc một công thức thành hình trong đầu</h2>
+
+  <p>Câu hỏi thật sự đứng sau cả bài này: nhìn một dòng như <code>tong += mgx * gx + mgy * gy</code>, làm sao để nó <em>hiện ra</em> thành cái gì đó chứ không nằm im như một dòng chữ. Dưới đây là năm câu hỏi, xếp theo thứ tự nên hỏi. Chúng không phải lý thuyết — mỗi câu đều đã bắt được ít nhất một lỗi thật trong chính engine này.</p>
+
+  <h3>1 · Mỗi ký hiệu mang đơn vị gì?</h3>
+  <p>Đây là câu rẻ nhất và bắt được nhiều lỗi nhất. <code>chuVi × HeSoMatDoBien</code> có đơn vị pixel; diện tích thì pixel². Cộng hai thứ khác đơn vị, hoặc so sánh chúng, là dấu hiệu công thức sai — hoặc mình đang đọc sai. <code>DonBayXoay</code> có đơn vị <em>pixel trên mỗi độ</em>, nên <code>1 / DonBayXoay</code> ra <em>độ</em>, và tự nó nói cho ta biết đó là một bước góc. Nếu chưa gán được đơn vị cho từng ký hiệu thì chưa hiểu công thức, dù có đọc trôi.</p>
+
+  <h3>2 · Cái gì là biến, cái gì đứng yên?</h3>
+  <p>Trong <code>Cham(am, diem, cx, cy, c, s)</code>, model đứng yên còn tư thế là biến. Vậy <code>Cham</code> là một hàm <em>ba biến</em> — x, y, θ — trả về một số. Hình ảnh đúng của nó là một <strong>khối ba chiều gập ghềnh</strong>, và cả nửa Run là chuyện đi tìm đỉnh cao nhất trong khối đó. Ngay khi thấy được hình ấy, ba chuyện tự sáng ra: kim tự tháp là dò thô trước cho rẻ, nội suy parabol là làm nhọn đỉnh, và <code>LocTrung</code> là chuyện phân biệt hai đỉnh riêng biệt với hai mẫu của cùng một đỉnh.</p>
+
+  <h3>3 · Thử giá trị biên</h3>
+  <p>Đặt vào những giá trị cực đoan mà mình đoán trước được kết quả:</p>
+  <ul>
+    <li>Hai vector cùng hướng → <code>t = 1</code>. Vuông góc → 0. Ngược → −1. ✓ đúng như trực giác về "song song cỡ nào".</li>
+    <li>Model là hình tròn hoàn hảo → mọi <code>X·Gy − Y·Gx</code> triệt tiêu → <code>DonBayXoay</code> = 0 → <code>BuocGocDo</code> = 180°. Đọc thành lời: <em>đừng quét góc, vô ích</em>. ✓ đúng như trực giác về hình tròn.</li>
+    <li><code>d = 0</code> → <code>w = 1</code>; <code>d = DungSaiPx</code> → <code>w = 0</code>. ✓ hàm trọng số nào cũng phải qua được hai mốc này.</li>
+  </ul>
+  <p>Công thức nào không sống sót qua bước này thì đọc tiếp cũng vô ích.</p>
+
+  <h3>4 · Vẽ cho MỘT phần tử, rồi mới nhân lên N</h3>
+  <p>Không ai hình dung nổi tổng của sáu mươi số hạng. Nhưng ai cũng hình dung được <em>một</em> điểm model đặt lên ảnh, mũi tên của nó lệch với mũi tên của ảnh một góc α. Hiểu xong một điểm rồi thì <code>Σ</code> chỉ còn là <strong>đếm phiếu</strong>, và <code>/N</code> là <strong>tính tỉ lệ phiếu thuận</strong>. Đây là lý do <code>DongGop</code> được tách hẳn ra thành một hàm riêng ở dòng 894 — nó là đơn vị suy nghĩ, không chỉ là đơn vị code.</p>
+
+  <h3>5 · Bỏ số hạng này đi thì hỏng chuyện gì?</h3>
+  <p>Đây là câu hữu ích nhất khi đang <em>đọc code suy ngược</em>, vì mỗi số hạng trong một engine đã chạy thật đều đứng đó do một tấm ảnh cụ thể đã hỏng. Thử với chính bài này:</p>
+
+  <div class="broke">
+    <div><span class="k">bỏ / N</span><span class="v">Model 300 điểm luôn thắng model 60 điểm. <b>Không tồn tại một ngưỡng chung.</b></span></div>
+    <div><span class="k">bỏ − Nen</span><span class="v">Mọi điểm cộng thêm 0,637 vô nghĩa. Người ta đi chỉnh ngưỡng để trừ nó bằng tay.</span></div>
+    <div><span class="k">bỏ / (1 − Nen)</span><span class="v">Dải hữu ích nén còn 36%. Điểm số vẫn xếp hạng đúng nhưng <b>không đọc được</b>.</span></div>
+    <div><span class="k">bỏ chuẩn hoá về 1</span><span class="v">Điểm đổi theo độ sáng đèn. Người ta đi chỉnh ngưỡng thay vì chỉnh đèn.</span></div>
+    <div><span class="k">bỏ dấu</span><span class="v">Vết xước trông hệt cạnh vật. Trên nền thép, tư thế nào cũng trúng đủ điểm.</span></div>
+    <div><span class="k">bỏ max(0, ·)</span><span class="v">Không hỏng gì — điểm âm chỉ là "loại" nói dài dòng. Đây là số hạng <b>tiện</b>, không phải <b>cần</b>.</span></div>
+  </div>
+
+  <p>Hàng cuối cùng mới là chỗ câu hỏi này chứng minh giá trị của nó: nó phân biệt được số hạng <em>cần</em> với số hạng <em>tiện</em>. Đọc code suy ngược mà không phân biệt được hai loại ấy thì sẽ đối xử với mọi dòng như nhau — và đó là cách một người mất ba ngày để hiểu một dòng vốn chỉ là thói quen của người viết.</p>
+
+  <div class="box key">
+    <span class="tag">Và một câu hỏi thứ sáu, dành riêng cho vision</span>
+    <p>Sau cả năm câu trên, vẫn còn một câu mà chỉ ảnh mới trả lời được: <em>mảng này có thật sự chứa thứ tôi tưởng nó chứa không?</em> Vì thế engine có <code>VeHuongGradient</code> (dòng 1213) — vẽ ra <b>đúng thứ mà <code>Cham</code> đọc</b>, không phải một ảnh trung gian nào khác. Chú thích ngay trên hàm ấy ghi rằng bản cũ hiện lại chính ảnh đã làm mờ, nên kết quả Sobel <em>chưa bao giờ nhìn thấy được</em>. Một công thức đọc trôi chảy trên một mảng chứa sai dữ liệu vẫn cho ra số — và con số đó nhìn hoàn toàn bình thường.</p>
+  </div>
+</section>
+
+<div class="closing">
+  A38.ImageCrop · nhánh hoc_patModel · 10/09/2026<br>
+  Số liệu trong bài lấy từ chú thích trong PmEngine.cs, PmCfg.cs và các lần đo ngày 07–08/09/2026.<br>
+  Bài trước: Đòn bẩy xoay — docs/don-bay-xoay.html
+</div>
+
+</main>
+</div>
