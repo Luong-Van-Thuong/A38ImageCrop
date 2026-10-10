@@ -15,6 +15,7 @@ using Cv2 = OpenCvSharp.Cv2;
 using ImreadModes = OpenCvSharp.ImreadModes;
 using Mat = OpenCvSharp.Mat;
 using Vec3b = OpenCvSharp.Vec3b;
+using ProjectAlign.PmAlign;
 
 namespace A38.ImageCrop.PmAlign;
 
@@ -590,6 +591,22 @@ public partial class CuaSoPmAlign : Window
         var mask = _mask.ToList();
         var cfg = _cfg.Sao();
         var nhat = new List<string>();
+
+        // Tu code -----------------------------------------
+        var (model_, mau_) = await Task.Run(() =>
+        {
+            var chay = PmAlign_TuCode.train_(anh, roi, mask, cfg, s => nhat.Add(s));
+            return (chay, PmEngine.CatMau(anh, roi));
+        });
+        
+
+
+
+
+
+
+
+
 
         BatNut(false);
         _dbg?.BatDauLuot("TRAIN " + Path.GetFileName(_duongDanAnh));

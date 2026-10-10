@@ -34,6 +34,11 @@ public sealed class MucPm
     /// |x·gy − y·gx|, nên điểm nằm trên đường tròn (gradient hướng tâm) đóng góp bằng 0
     /// dù nó ở xa tâm đến đâu — bán kính lớn KHÔNG đồng nghĩa với có đòn bẩy.
     /// </summary>
+    /// Ta có tích có hướng của hai vector thì sẽ tính được độ dài của cạnh cùng chiều với vector gradient
+    /// Ta có tích vô hướng của hai vector thì sẽ tính được độ dài của cạnh vuông góc với vector gradient
+    /// mà vật di chuyển vị trí thay đổi thì phải nhìn vào cạnh vuông góc với vector gradient để tính vì khi nó thay đổi thì nó cũng không thuộc bất kỳ cạnh nào đã có từ trước
+    /// Còn nếu nhìn vào tích vô hướng thì điểm tuy có thay đổi nhưng nó thay đổi trên cạnh đã có tọa độ thì nó di chuyển từ điểm a sang điểm b thì cả 2 điểm đó đều vẫn thuộc ảnh 
+    /// giống master lên không có ý nghĩa gì 
     public double DonBayXoay;
 
     [JsonIgnore] public bool DungDuoc => Diem.Length > 0 && Rong >= 8 && Cao >= 8;
