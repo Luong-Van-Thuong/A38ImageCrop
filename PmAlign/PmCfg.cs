@@ -79,6 +79,9 @@ public sealed class PmCfg
     /// <summary>Chặn trên số điểm mỗi mức. Nhiều điểm thì chính xác hơn nhưng chậm đi tuyến tính.</summary>
     public int SoDiemToiDa = 500;
 
+    // Ngưỡng xét điều kiện độ mạnh của gradient
+    public int NguongGrad = 30;
+
     /// <summary>
     /// Mức ít hơn ngần này điểm coi như không dùng được, dò sẽ không bắt đầu từ đó.
     ///

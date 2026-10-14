@@ -593,11 +593,11 @@ public partial class CuaSoPmAlign : Window
         var nhat = new List<string>();
 
         // Tu code -----------------------------------------
-        var (model_, mau_) = await Task.Run(() =>
-        {
-            var chay = PmAlign_TuCode.train_(anh, roi, mask, cfg, s => nhat.Add(s));
-            return (chay, PmEngine.CatMau(anh, roi));
-        });
+        //var (model_, mau_) = await Task.Run(() =>
+        //{
+        //    var chay = PmAlign_TuCode.train_(anh, roi, mask, cfg, s => nhat.Add(s));
+        //    return (chay, PmEngine.CatMau(anh, roi));
+        //});
         
 
 
@@ -615,39 +615,60 @@ public partial class CuaSoPmAlign : Window
             var dh = Stopwatch.StartNew();
             var (model, mau) = await Task.Run(() =>
             {
-                var m = PmEngine.Train(anh, roi, mask, cfg, s => nhat.Add(s));
+                //var m = PmEngine.Train(anh, roi, mask, cfg, s => nhat.Add(s));
+                var m = PmAlign_TuCode.train_(anh, roi, mask, cfg, s => nhat.Add(s));
                 return (m, PmEngine.CatMau(anh, roi));
             });
             dh.Stop();
+            if (model != null)
+            {
 
-            _model = model;
-            _model.TenAnhMau = Path.GetFileName(_duongDanAnh);
-            _model.VungTim = _vungTim;      // đi theo model, xem PmModel.VungTim
-            _mauMau?.Dispose();
-            _mauMau = mau;
-            _ketQua = [];
-            DsKetQua.Items.Clear();
 
-            Ghi($"─── TRAIN {_model.TenAnhMau}  ROI {roi}  ({dh.ElapsedMilliseconds} ms) ───");
-            foreach (var s in nhat) Ghi("  " + s);
+                _model = model;
+                _model.TenAnhMau = Path.GetFileName(_duongDanAnh);
+                _model.VungTim = _vungTim;      // đi theo model, xem PmModel.VungTim
+                _mauMau?.Dispose();
+                _mauMau = mau;
+                _ketQua = [];
+                DsKetQua.Items.Clear();
 
-            int tho = _model.MucThoNhatDungDuoc;
-            Ghi($"  Muc tho nhat dung duoc: L{tho}, buoc goc {_model.Muc[tho].BuocGocDo:F2} do, " +
-                $"ti le don bay {_model.Muc[tho].TiLeDonBay:P0}");
-            if (_model.Muc[tho].TiLeDonBay < 0.15)
-                Ghi("  CANH BAO: don bay xoay rat thap — mau nay gan nhu tron xoay, goc se khong on dinh.");
+                Ghi($"─── TRAIN {_model.TenAnhMau}  ROI {roi}  ({dh.ElapsedMilliseconds} ms) ───");
+                foreach (var s in nhat) Ghi("  " + s);
 
-            // Vùng tìm kiếm quyết định cả tốc độ lẫn khả năng từ chối — lý do đầy đủ ở
-            // PmModel.VungTim. Nói to lúc train, vì lúc đó sửa còn dễ.
-            if (_model.VungTim.HopLe)
-                Ghi($"  Vung tim {_model.VungTim} da duoc luu vao model.");
+                int tho = _model.MucThoNhatDungDuoc;
+                Ghi($"  Muc tho nhat dung duoc: L{tho}, buoc goc {_model.Muc[tho].BuocGocDo:F2} do, " +
+                    $"ti le don bay {_model.Muc[tho].TiLeDonBay:P0}");
+                if (_model.Muc[tho].TiLeDonBay < 0.15)
+                    Ghi("  CANH BAO: don bay xoay rat thap — mau nay gan nhu tron xoay, goc se khong on dinh.");
+
+                // Vùng tìm kiếm quyết định cả tốc độ lẫn khả năng từ chối — lý do đầy đủ ở
+                // PmModel.VungTim. Nói to lúc train, vì lúc đó sửa còn dễ.
+                if (_model.VungTim.HopLe)
+                    Ghi($"  Vung tim {_model.VungTim} da duoc luu vao model.");
+                else
+                    Ghi("  CANH BAO: CHUA khoanh vung tim kiem — Run se quet ca anh. Cham hon nhieu lan, " +
+                        "va model KHONG con tu choi duoc anh khong co vat (do duoc: cung mot mau cho diem " +
+                        "0.982 o cho khac trong anh). Khoanh 'Vung tim' roi Train lai.");
+
+                TtThongTin.Text = $"Train xong: {_model.Muc.Sum(m => m.Diem.Length)} diem / {_model.Muc.Count} muc, {dh.ElapsedMilliseconds} ms";
+                VeLai();
+            }
             else
-                Ghi("  CANH BAO: CHUA khoanh vung tim kiem — Run se quet ca anh. Cham hon nhieu lan, " +
-                    "va model KHONG con tu choi duoc anh khong co vat (do duoc: cung mot mau cho diem " +
-                    "0.982 o cho khac trong anh). Khoanh 'Vung tim' roi Train lai.");
-
-            TtThongTin.Text = $"Train xong: {_model.Muc.Sum(m => m.Diem.Length)} diem / {_model.Muc.Count} muc, {dh.ElapsedMilliseconds} ms";
-            VeLai();
+            {
+                // Train thất bại thì phải BỎ model cũ: giữ lại thì bấm Run sẽ chạy trên model
+                // của lần train trước mà người dùng tưởng là model mới.
+                _model = null;
+                mau?.Dispose();
+                _ketQua = [];
+                DsKetQua.Items.Clear();
+                TtThongTin.Text = "Train that bai: ROI khong co bien.";
+                VeLai();
+                Bao("Train that bai: khong tim thay diem bien nao trong ROI o muc L0.\n\n" +
+                    "Kiem tra lai:\n" +
+                    "  • ROI co nam dung tren vat khong (khong ve vao vung phang)?\n" +
+                    "  • Anh co qua toi / qua mo khien Canny 30/100 khong bat duoc bien?\n\n" +
+                    "Model cu da bi bo — hay khoanh lai ROI roi Train lai.");
+            }
         }
         catch (Exception ex) { Bao(ex.ToString()); }
         finally { BatNut(true); _dbg?.XongLuot(); }

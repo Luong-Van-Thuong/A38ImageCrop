@@ -29,6 +29,8 @@ public sealed class MucPm
     public double NguongThap, NguongCao;
     public int SoPixelBien, SoUngVien;
 
+    public double xMuc, yMuc;  // tâm mẫu trong ảnh gốc, pixel
+
     /// <summary>
     /// ĐÒN BẨY XOAY, pixel dịch chuyển trên mỗi độ xoay. Đóng góp của một điểm là
     /// |x·gy − y·gx|, nên điểm nằm trên đường tròn (gradient hướng tâm) đóng góp bằng 0
@@ -64,6 +66,7 @@ public sealed class PmModel
     public List<RectXoay> Mask = [];
     public int Rong, Cao;
     public List<MucPm> Muc = [];
+
 
     /// <summary>
     /// MẶT NẠ CHE Ở TOẠ ĐỘ MẪU, mức L0: <see cref="Rong"/> × <see cref="Cao"/> byte, 1 = don't-care.
