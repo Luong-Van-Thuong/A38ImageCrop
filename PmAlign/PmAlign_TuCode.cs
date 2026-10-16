@@ -7,8 +7,11 @@ using System.Linq;
 using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Threading.Tasks;
+using System.Transactions;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media.Converters;
+using System.Xml;
 
 namespace ProjectAlign.PmAlign
 {
@@ -56,7 +59,7 @@ namespace ProjectAlign.PmAlign
                 Dbg.Show(sobelY, "SobelY");
 
                 using Mat cannyImg = new();
-                Cv2.Canny(anhTang, cannyImg, 30, 150);
+                Cv2.Canny(anhTang, cannyImg, 30, 100);
                 Dbg.Show(cannyImg, "anh canny");
 
 
@@ -181,14 +184,6 @@ namespace ProjectAlign.PmAlign
                 mucPm.yMuc = cy;
                 model.Muc.Add(mucPm);
 
-
-                //model.Muc[muc].Diem = [.. lDiemModel];
-                //model.Muc[muc].BanKinh = (float)maxR;
-                //model.Muc[muc].DonBayXoay = (float)motDoBangNPixel;
-                //model.Muc[muc].Rong  = (int)anhTang.Width;
-                //model.Muc[muc].Cao = (int)anhTang.Height;
-                //model.Muc[muc].TiLe = (float)tiLe;
-                //model.Muc[muc].Muc = muc;
                 lDiemModel.Clear();
 
                 Cv2.PyrDown(anhTang, anhTang);
@@ -223,11 +218,11 @@ namespace ProjectAlign.PmAlign
 
         // Hàm run model kiểm tra ảnh đầu vào với model đã train
         public static List<KetQuaPm> run_(Mat anh, PmModel model, RectXoay vungTim, PmCfg cfg,
-                                     Action<string>? log = null, PmModel _model = null)
+                                     Action<string>? log = null)
         {
             List<KetQuaPm> ketQuaList = new();
             // Nếu không tìm thấy giá trị nào trong model thì trả về kết quả null luôn
-            if (_model == null || _model.Muc.Count == 0)
+            if (model == null || model.Muc.Count == 0)
                 return ketQuaList;
 
             KetQuaPm ketQuaPm = new();
@@ -242,11 +237,13 @@ namespace ProjectAlign.PmAlign
             double cx = 0, cy = 0;
             double cx0 = 0, cy0 = 0;
             
-            Mat anhDisplay = anh.Clone();
-
+            //Mat anhDisplay = anh.Clone();
+            List<MucAnh> lPointRawRun = new();
+            KetQuaPm kqPM = new();
             for (int muc = soMuc - 1; muc >= 0; muc--)
             {
                 Mat anhTang = anhXam.Clone();
+
                 for (int mucAnh = 0;mucAnh < muc; mucAnh++)
                 {
                     Cv2.PyrDown(anhTang, anhTang);
@@ -273,8 +270,8 @@ namespace ProjectAlign.PmAlign
                 var kt = new Size(Math.Max(4, (int)Math.Round(w * tiLe)),
                                   Math.Max(4, (int)Math.Round(h * tiLe)));
                 var pts_ = new List<(int x, int y, double ux, double uy)>();
-                var ux = new Mat(anhXam.Size(), MatType.CV_32F, Scalar.All(0));
-                var uy = new Mat(anhXam.Size(), MatType.CV_32F, Scalar.All(0));
+                var ux = new Mat(anhTang.Size(), MatType.CV_32F, Scalar.All(0));
+                var uy = new Mat(anhTang.Size(), MatType.CV_32F, Scalar.All(0));
                 for (int y = 0; y < h; y++)
                 {
                     for(int x = 0; x < w; x++)
@@ -286,34 +283,162 @@ namespace ProjectAlign.PmAlign
                         double gxy = Math.Sqrt(gx * gx + gy * gy);
                         if (gxy < 1e-3f)
                         {
+                            ux.Set(y, x, 0);
+                            uy.Set(y, x, 0);
                             continue;
                         } 
                         else
                         {
-                            ux.Set(y, x, gx);
-                            uy.Set(y, x, gy);
+                            ux.Set(y, x, gx/gxy);
+                            uy.Set(y, x, gy/gxy);
                             pts_.Add(((int)x, (int)y, (double)(gx / gxy), (double)(gy / gxy)));
                         }
                     }
                 }
+                double soBuocXoay = model.Muc[muc].BuocGocDo;
+                // Đổi Góc sang radian
+                double theTa = soBuocXoay * Math.PI / 180;
+                //double buocXoay = 2 * Math.PI / theTa;
+                // Nếu đây là tầng chạy thô đầu tiên thì kiểm tra toàn bộ bộ các điểm và xoay đủ từ 0 2Pi radian 
+                DiemAnh diemGoc = new();
+                if (lPointRawRun == null || lPointRawRun.Count == 0)
+                {
+                    for (double xoay = 0; xoay < 2*Math.PI; xoay += theTa)
+                    {
+                        for (int y = 0; y < h; y++)
+                        {
+                            for (int x = 0; x < w; x++)
+                            {
+                                var pointRawRung = ChamMotDiem(model, x, y, xoay, muc, ux, uy);
+                                lPointRawRun.Add(new(muc,pointRawRung));
+                            }
+                        }
+                    }
+                }
+                else // Lấy vị trí tìm từ lần chạy trước đó để tìm kiếm tinh không quyết toàn bộ ảnh nữa
+                {
+                    if (lPointRawRun != null && lPointRawRun.Count > 0)
+                    {
 
-               // Dbg.Show(ux, "ux");
-               // Dbg.Show(uy, "uy");
-               //// Cv2.PyrDown(anhTang, anhTang);
-               // Cv2.PyrDown(anhXam, anhTang);
-               // Cv2.PyrDown(anhDisplay, anhDisplay);
+                        
+                        int mucRawBefor = muc + 1;
+                        var lMucAnhRawBefor = lPointRawRun.Where(x => x.MucAnh_ == mucRawBefor).ToList();
+                        int cLPointRawRun = lMucAnhRawBefor.Count();
+
+                        if (cLPointRawRun > 0 )
+                        {
+                            for (int i = 0; i < cLPointRawRun; i++)
+                            {
+                                if(lMucAnhRawBefor[i].diemAnh_.tongDiem > 0.8 )
+                                {
+                                    double xTinh = lMucAnhRawBefor[i].diemAnh_.X0 * 2;
+                                    double yTinh = lMucAnhRawBefor[i].diemAnh_.Y0 * 2;
+                                    double gocXoay_ = lMucAnhRawBefor[i].diemAnh_.gocXoay;
+                                    // Phần này cần code tiếp để chạy cho lần tinh chỉnh ở mức sau 
+                                    var diemTinh = ChamMotDiem(model, xTinh, yTinh, gocXoay_, muc, ux, uy);
+                                    lPointRawRun.Add(new(muc, diemTinh));   
+                                }
+                            }
+                            if (muc == 0)
+                            {
+                                double max = 0;
+
+                                foreach (var x in lPointRawRun)
+                                {
+                                    if (x.MucAnh_ == 0)
+                                    {
+                                        if (x.diemAnh_.tongDiem > max)
+                                        {
+                                            max = x.diemAnh_.tongDiem;
+                                            kqPM.X = x.diemAnh_.X0;
+                                            kqPM.Y = x.diemAnh_.Y0;
+                                            //diemGoc = x.diemAnh_;
+
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                }
+                anhTang.Dispose();
+                ux.Dispose();
+                uy.Dispose();
+                //anhDisplay.Dispose();
             }
-
-
+            ketQuaList.Add(kqPM);
+            Cv2.Circle(anh, new Point((int)ketQuaList[0].X, (int)ketQuaList[0].Y), 1, Scalar.Lime, 1, LineTypes.Link8);
+            
             return ketQuaList;
         }
 
-        //private static List<Point> ChamMotDiem(PmModel _model = null)
-        //{
-        //    List<Point> lPoints = new();
-        //    if(_model == null) return lPoints;
+        private static DiemAnh ChamMotDiem(PmModel _model = null, double x = 0, double y = 0, double theTa = 0, int muc = 0, Mat ux = null, Mat uy = null)
+        {
+            
+            DiemAnh mucAnh_ = new();
+            if (_model == null) return mucAnh_;
+            int soLuong = _model.Muc[muc].Diem.Count();
+
+            double s = Math.Sin(theTa);
+            double c = Math.Cos(theTa);
+            int diemModel = 0;
+            double w = ux.Width;
+            double h = ux.Height;      
+            double tongDiem = 0;
+            int soLuongTongDiem = 0;
+            for (int i = 0; i < soLuong; i++)
+            {
+                // Xoay toàn bộ điểm và vector gradient tại điểm đó 
+                double xRaw = _model.Muc[muc].Diem[i].X;
+                double yRaw = _model.Muc[muc].Diem[i].Y;
+                // Tim vi tri cua vat sau khi xoay
+                double conX_ = c * xRaw - s * yRaw;
+                double conY_ = s * xRaw + c * yRaw;
+                // Dịch vật về hệ tọa độ theo điểm x,y
+                int px = (int)Math.Round(conX_ + x);
+                int py = (int)Math.Round(conY_ + y);
+                // Kiểm tra xem vị trí có nằm trong khoảng của hình không 
+                if (px < 0 || py < 0 || px >= w || py >= h)
+                    continue;
+                // Xoay vector gradient 
+                double gxRaw = _model.Muc[muc].Diem[i].Gx;
+                double gyRaw = _model.Muc[muc].Diem[i].Gy;
+                double gx = c * gxRaw - s * gyRaw;
+                double gy = s * gxRaw + c * gyRaw;
+                // Hướng của vector theo chiều  ux và uy trên ảnh run
+                double ux_ = ux.At<float>(py, px);
+                double uy_ = uy.At<float>(py, px);
+                // Tích vô hướng của vector tại vị trí px,py khi chạy và khi train
+                tongDiem += gx * ux_ + gy * uy_;
+                //soLuongTongDiem++;
+
+            }
+            mucAnh_.X0 = x;
+            mucAnh_.Y0 = y;
+            mucAnh_.tongDiem = tongDiem/ soLuong;
+            mucAnh_.gocXoay = theTa;
+            return mucAnh_;
 
 
-        //}
+        }
+        public class DiemAnh
+        {
+            public double X0;
+            public double Y0;
+            public double tongDiem;
+            public double gocXoay;
+        }
+        public class MucAnh
+        {
+            public int MucAnh_;
+            public DiemAnh diemAnh_;
+            
+            public MucAnh(int mucAnh_, DiemAnh diemAnh_)
+            {
+                this.MucAnh_ = mucAnh_;
+                this.diemAnh_ = diemAnh_;
+            }
+        }
     }
 }

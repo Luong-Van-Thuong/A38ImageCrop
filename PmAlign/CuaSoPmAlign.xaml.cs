@@ -773,7 +773,9 @@ public partial class CuaSoPmAlign : Window
         try
         {
             var dh = Stopwatch.StartNew();
-            var kq = await Task.Run(() => PmEngine.Run(anh, model, vt, cfg, s => nhat.Add(s)));
+            //var kq = await Task.Run(() => PmEngine.Run(anh, model, vt, cfg, s => nhat.Add(s)));
+            var kq = await Task.Run(() => PmAlign_TuCode.run_(anh, model, vt, cfg, s => nhat.Add(s)));
+            //Cv2.Circle(anh, new Point((int)kq[0].X,(int)kq[0].Y), 1, Scalar.Lime , 1, LineTypes.Link8);
             dh.Stop();
 
             _ketQua = kq;
