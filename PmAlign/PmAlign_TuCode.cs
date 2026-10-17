@@ -310,6 +310,7 @@ namespace ProjectAlign.PmAlign
                             for (int x = 0; x < w; x++)
                             {
                                 var pointRawRung = ChamMotDiem(model, x, y, xoay, muc, ux, uy);
+                                if (pointRawRung.tongDiem < 0.5) continue;
                                 lPointRawRun.Add(new(muc,pointRawRung));
                             }
                         }
@@ -422,12 +423,50 @@ namespace ProjectAlign.PmAlign
 
 
         }
+
+        public static List<DiemAnh> LocTrungNMS(List<DiemAnh> ds, double khoangPx, double khoangGocRad, int soGiu)
+        {
+            List<DiemAnh> lDiemAnh = new();
+            List<DiemAnh> giu = new();
+            var diem = ds.OrderByDescending(x => x.tongDiem).ToList();
+            foreach (var d in diem)
+            { 
+                bool trung = false;
+                foreach(var g in giu)
+                {
+                    double dx = g.X0 - d.X0; double dy = g.Y0 - d.Y0;
+                    double dxy = dx * dx + dy * dy;
+                    double gocR = GocLec(d.gocXoay, g.gocXoay);
+                    if(dxy < khoangPx*khoangPx || gocR < khoangGocRad)
+                    {
+                        trung = true;
+                        break;
+                    }    
+                }
+                if (!trung) 
+                {   
+                    giu.Add(d);
+                }
+                if (giu != null && giu.Count > soGiu)
+                {
+                    return lDiemAnh;
+                }
+            }
+            return lDiemAnh;
+        }
+        private static double GocLec(double a, double b)
+        {
+            double d = a - b;
+            while (d > 0) { d -= 2 * Math.PI; }
+            while (d <= 0) { d += 2 * Math.PI; }
+            return d;
+        }
         public class DiemAnh
         {
             public double X0;
             public double Y0;
             public double tongDiem;
-            public double gocXoay;
+            public double gocXoay; // tinh bằng rad, model đang xoay ở góc rad nào
         }
         public class MucAnh
         {
