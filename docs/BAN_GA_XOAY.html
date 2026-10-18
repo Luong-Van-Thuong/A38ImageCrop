@@ -1,0 +1,916 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>Bàn Gá Xoay</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Saira+Condensed:wght@600;700&display=swap">
+<style>
+/* Layout: bàn gá kỹ thuật trên giấy kẻ ô pixel. Hai cột: lý thuyết | bàn thí nghiệm, rồi luyện tập | tự code. */
+:root {
+  --bg: #E9EDE6;
+  --gridbg: #DFE5DB;
+  --paper: #FAFBF8;
+  --chip: #EEF2EC;
+  --ink: #16201A;
+  --muted: #58665D;
+  --line: #D0D8CF;
+  --grid: #E3E9E1;
+  --grid2: #C3CEC4;
+  --x: #BF3328;
+  --y: #23803A;
+  --vec: #1D58C9;
+  --rot: #C25F0C;
+  --ok: #23803A;
+  --bad: #BF3328;
+  --okbg: #DDEFDF;
+  --badbg: #F6E0DC;
+  --onaccent: #FFFFFF;
+  --display: "Saira Condensed", "Arial Narrow", sans-serif;
+  --body: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1411; --gridbg: #131B17; --paper: #151D19; --chip: #1C2621; --ink: #E2E9E3; --muted: #93A399;
+    --line: #2A3630; --grid: #1D2722; --grid2: #33423A; --x: #F0675B; --y: #5BC46D; --vec: #73A0FF;
+    --rot: #F29A45; --ok: #5BC46D; --bad: #F0675B; --okbg: #173022; --badbg: #3A1E1B; --onaccent: #0E1411;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1411; --gridbg: #131B17; --paper: #151D19; --chip: #1C2621; --ink: #E2E9E3; --muted: #93A399;
+  --line: #2A3630; --grid: #1D2722; --grid2: #33423A; --x: #F0675B; --y: #5BC46D; --vec: #73A0FF;
+  --rot: #F29A45; --ok: #5BC46D; --bad: #F0675B; --okbg: #173022; --badbg: #3A1E1B; --onaccent: #0E1411;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--gridbg) 1px, transparent 1px), linear-gradient(90deg, var(--gridbg) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font: 400 15px/1.6 var(--body);
+}
+.wrap {
+  max-width: 1180px; margin: 0 auto; display: grid; gap: 20px;
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+code { font: 500 .9em var(--mono); background: var(--chip); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+b { font-weight: 700; }
+
+/* ---------- header ---------- */
+.top { display: flex; flex-wrap: wrap; gap: 20px 32px; align-items: flex-end; justify-content: space-between; }
+.brand { min-width: 0; flex: 1 1 420px; }
+.kicker { font: 600 12px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+h1 { font: 700 clamp(44px, 8vw, 72px)/.92 var(--display); text-transform: uppercase; letter-spacing: .01em; margin: 6px 0 10px; text-wrap: balance; }
+h1 .deg { color: var(--rot); }
+.sub { max-width: 62ch; margin: 0; color: var(--muted); }
+.curve { margin: 0; width: min(300px, 100%); background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 8px; }
+.curve svg { display: block; width: 100%; height: auto; }
+.curve figcaption { font: 500 12px/1.4 var(--mono); color: var(--muted); }
+
+.rhythm { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; counter-reset: s; font-size: 13px; color: var(--muted); }
+.rhythm li { display: flex; align-items: center; gap: 7px; }
+.rhythm li::before { counter-increment: s; content: counter(s); font: 600 11px/1 var(--mono); width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--grid2); color: var(--ink); background: var(--paper); }
+
+/* ---------- level nav ---------- */
+.nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 760px) { .nav { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.lv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; align-items: center; text-align: left; padding: 10px 12px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); font: inherit; cursor: pointer; }
+.lv:hover { border-color: var(--grid2); }
+.lvn { grid-row: 1 / 3; font: 700 30px/1 var(--display); color: var(--muted); min-width: 1ch; }
+.lvt { font-weight: 600; font-size: 14px; line-height: 1.25; }
+.pips { display: flex; gap: 4px; }
+.pips i { width: 18px; height: 4px; border-radius: 2px; background: var(--line); }
+.pips i.f { background: var(--ok); }
+.lv.on { border-color: var(--vec); box-shadow: inset 0 0 0 1px var(--vec); }
+.lv.on .lvn { color: var(--vec); }
+.lv.done .lvn { color: var(--ok); }
+.lv:focus-visible, .btn:focus-visible, .tog input:focus-visible, .ctl input:focus-visible, summary:focus-visible, dd.masked:focus-visible { outline: 2px solid var(--vec); outline-offset: 2px; }
+
+/* ---------- level layout ---------- */
+.level { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-areas: "theory lab" "quiz code"; gap: 20px; align-items: start; }
+@media (max-width: 920px) { .level { grid-template-columns: minmax(0, 1fr); grid-template-areas: "theory" "lab" "quiz" "code"; } }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 18px; min-width: 0; }
+.theory { grid-area: theory; }
+.lab { grid-area: lab; }
+.quiz { grid-area: quiz; }
+.code { grid-area: code; }
+.eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--vec); margin: 0; }
+.theory h2 { font: 700 clamp(30px, 4vw, 38px)/1.02 var(--display); text-transform: uppercase; margin: 6px 0 6px; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); }
+.card h3 { font: 600 12px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.theory section { padding-top: 14px; margin-top: 14px; border-top: 1px dashed var(--line); }
+.theory section p { margin: 0; max-width: 66ch; }
+pre.f, pre.sig { font: 400 13px/1.6 var(--mono); background: var(--chip); border-radius: 6px; padding: 12px 14px; overflow-x: auto; margin: 0; white-space: pre; color: var(--ink); }
+
+/* ---------- lab ---------- */
+.labhead { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.labhead h3 { margin: 0; }
+.tog { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.tog input { width: 16px; height: 16px; accent-color: var(--rot); }
+#cv { display: block; width: 100%; max-width: 100%; aspect-ratio: 16 / 10; border-radius: 6px; border: 1px solid var(--line); touch-action: none; background: var(--paper); }
+#cv.dragging { cursor: grabbing; }
+.labnote { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
+.ctrls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-top: 12px; }
+.ctl { display: flex; align-items: center; gap: 10px; flex: 1 1 230px; min-width: 0; }
+.ctl input { flex: 1; min-width: 0; accent-color: var(--vec); }
+.ctl output { font: 600 13px var(--mono); min-width: 6ch; text-align: right; font-variant-numeric: tabular-nums; }
+.cl { font: 600 12px var(--mono); color: var(--muted); white-space: nowrap; }
+.ro { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; margin: 12px 0 0; }
+.ro .r { background: var(--chip); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.ro dt { font: 500 11.5px/1.25 var(--mono); color: var(--muted); }
+.ro dd { margin: 3px 0 0; font: 600 14px/1.3 var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ro dd.masked { cursor: pointer; color: var(--rot); }
+
+/* ---------- quiz ---------- */
+.btn { font: 600 14px/1 var(--body); padding: 10px 16px; border-radius: 6px; border: 1px solid var(--vec); background: var(--vec); color: var(--onaccent); cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--grid2); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.small { padding: 7px 12px; font-size: 13px; }
+#qprompt { margin: 0; }
+.fields { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.fld { display: flex; align-items: center; gap: 8px; background: var(--chip); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+.fld span { font: 600 13px var(--mono); color: var(--muted); white-space: nowrap; }
+.fld input { width: 9ch; font: 600 15px var(--mono); border: 0; background: transparent; color: var(--ink); outline: none; padding: 2px 0; }
+.fld:focus-within { border-color: var(--vec); }
+.fld.ok { border-color: var(--ok); background: var(--okbg); }
+.fld.bad { border-color: var(--bad); background: var(--badbg); }
+.qbtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.fb { margin: 12px 0 0; padding: 10px 12px; border-radius: 6px; }
+.fb.ok { background: var(--okbg); }
+.fb.bad { background: var(--badbg); }
+.sol { margin-top: 12px; padding: 12px 14px; background: var(--chip); border-radius: 6px; font-size: 14px; }
+.sol .tag { font: 600 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--rot); display: block; margin-bottom: 6px; }
+
+/* ---------- code task ---------- */
+.code p { margin: 0 0 10px; max-width: 66ch; }
+.code .note { font-size: 13px; color: var(--muted); }
+.code pre.sig { margin-bottom: 10px; }
+.tbl { overflow-x: auto; margin-bottom: 10px; }
+table { border-collapse: collapse; width: 100%; font: 13px/1.4 var(--mono); }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-weight: 600; color: var(--muted); font-size: 12px; }
+details { border: 1px dashed var(--grid2); border-radius: 6px; padding: 8px 12px; }
+summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+details p { margin: 8px 0 0; }
+.code ol { margin: 0 0 10px; padding-left: 20px; }
+.code li { margin-bottom: 4px; }
+
+footer { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); }
+footer p { margin: 0; max-width: 70ch; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <p class="kicker">A38.ImageCrop · phòng tập toán hình</p>
+      <h1>Bàn Gá Xoay<span class="deg">°</span></h1>
+      <p class="sub">Vector, góc, toạ độ cực và phép xoay, tính đúng trong toạ độ ảnh của OpenCV (gốc trên-trái, y đi xuống). Kéo điểm trên hình, đoán số trước khi xem, rồi tự viết hàm trong repo.</p>
+    </div>
+    <figure class="curve">
+      <svg id="curve" viewBox="0 0 260 124" role="img" aria-label="Đường parabol tiến bộ qua 8 bậc"></svg>
+      <figcaption id="curveCap"></figcaption>
+    </figure>
+  </header>
+
+  <ol class="rhythm" aria-label="Nhịp học mỗi bậc">
+    <li>Đọc vấn đề và ví dụ số</li>
+    <li>Kéo thử trên bàn thí nghiệm</li>
+    <li>Bật "ẩn kết quả", tự tính, bấm dấu ? để so</li>
+    <li>Làm đúng 3 câu luyện</li>
+    <li>Tự code hàm trong repo</li>
+  </ol>
+
+  <nav id="nav" class="nav" aria-label="Các bậc"></nav>
+
+  <main class="level">
+    <article id="theory" class="theory card"></article>
+
+    <section class="lab card" aria-label="Bàn thí nghiệm">
+      <div class="labhead">
+        <h3>Bàn thí nghiệm</h3>
+        <label class="tog" for="hide"><input type="checkbox" id="hide"> Ẩn kết quả, tự tính trước</label>
+      </div>
+      <canvas id="cv" aria-label="Hình tương tác: kéo các chấm tròn"></canvas>
+      <p class="labnote" id="labnote"></p>
+      <div id="ctrls" class="ctrls"></div>
+      <dl id="ro" class="ro"></dl>
+    </section>
+
+    <section class="quiz card" aria-label="Luyện tập">
+      <h3>Luyện tập · số mới mỗi lần</h3>
+      <p id="qprompt"></p>
+      <div id="qfields" class="fields"></div>
+      <div class="qbtns">
+        <button type="button" id="btnCheck" class="btn">Kiểm tra</button>
+        <button type="button" id="btnNew" class="btn ghost">Câu khác</button>
+        <button type="button" id="btnReveal" class="btn ghost" disabled>Xem lời giải</button>
+      </div>
+      <div id="qfeed" aria-live="polite"></div>
+      <div id="qsol" class="sol" hidden></div>
+    </section>
+
+    <section id="code" class="code card" aria-label="Tự code"></section>
+  </main>
+
+  <footer>
+    <p>Tiến độ lưu trong trình duyệt này. "Xem lời giải" chỉ mở sau 2 lần sai, và câu đã xem lời giải không được tính điểm.</p>
+    <button type="button" id="btnReset" class="btn ghost small">Xoá tiến độ</button>
+  </footer>
+</div>
+
+<script>
+(() => {
+'use strict';
+const W = 640, H = 400, KEY = 'banGaXoay.v1';
+const $ = s => document.querySelector(s);
+const rad = d => d * Math.PI / 180, deg = r => r * 180 / Math.PI;
+const ri = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function r1(v, d = 1) { const k = Math.pow(10, d); let r = Math.round(v * k) / k; if (Object.is(r, -0)) r = 0; return r; }
+const f = (v, d = 1) => r1(v, d).toFixed(d);          // số cố định chữ số
+const n = (v, d = 2) => String(r1(v, d));              // số gọn
+const pn = v => (Number(v) < 0 ? `(${v})` : `${v}`);    // bọc ngoặc số âm khi thay vào công thức
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const css = name => getComputedStyle(document.documentElement).getPropertyValue('--' + name).trim();
+const normLine = a => { while (a > 90) a -= 180; while (a <= -90) a += 180; return a; };
+// Công thức sách giáo khoa R(θ). Trong ảnh (y xuống) θ > 0 quay XUÔI kim đồng hồ trên màn hình.
+const texRot = (p, t) => { const c = Math.cos(rad(t)), s = Math.sin(rad(t)); return { x: p.x * c - p.y * s, y: p.x * s + p.y * c }; };
+// Quy ước của Cv2.GetRotationMatrix2D: angle > 0 quay NGƯỢC kim đồng hồ trên màn hình.
+const cvRot = (p, c, a) => { const ca = Math.cos(rad(a)), sa = Math.sin(rad(a)); const dx = p.x - c.x, dy = p.y - c.y; return { x: c.x + dx * ca + dy * sa, y: c.y - dx * sa + dy * ca }; };
+
+/* ---------------- state ---------------- */
+let S = { level: 0, ok: {}, hide: false };
+try { const raw = localStorage.getItem(KEY); if (raw) S = Object.assign(S, JSON.parse(raw)); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+let cur = null, sc = null, revealNow = false, q = null, qs = { tries: 0, revealed: false, done: false };
+const hv = s => (S.hide && !revealNow) ? '?' : s;
+
+/* ---------------- drawing helpers ---------------- */
+const MONO = '"JetBrains Mono", ui-monospace, Consolas, monospace';
+function grid(ctx) {
+  ctx.fillStyle = css('paper'); ctx.fillRect(0, 0, W, H);
+  const g = css('grid'), g2 = css('grid2');
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 20) { ctx.strokeStyle = x % 100 === 0 ? g2 : g; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y <= H; y += 20) { ctx.strokeStyle = y % 100 === 0 ? g2 : g; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+}
+function line(ctx, x1, y1, x2, y2, color, w = 1.5, dash = null) {
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function arrow(ctx, x1, y1, x2, y2, color, w = 2.5) {
+  const L = Math.hypot(x2 - x1, y2 - y1); if (L < 1) return;
+  const a = Math.atan2(y2 - y1, x2 - x1), hl = Math.min(13, L * .45);
+  ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - hl * .7 * Math.cos(a), y2 - hl * .7 * Math.sin(a)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - hl * Math.cos(a - .42), y2 - hl * Math.sin(a - .42));
+  ctx.lineTo(x2 - hl * Math.cos(a + .42), y2 - hl * Math.sin(a + .42));
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function dot(ctx, x, y, color, r = 6) {
+  ctx.save(); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = css('paper'); ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+}
+function ring(ctx, x, y, color) {
+  ctx.save(); ctx.strokeStyle = color; ctx.globalAlpha = .45; ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+}
+// góc tính theo atan2 của ảnh: canvas cũng có y đi xuống nên vẽ thẳng được
+function arcDeg(ctx, cx, cy, r, a0, a1, color, w = 2, dash = null) {
+  if (r < 1 || Math.abs(a1 - a0) < .05) return;
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.arc(cx, cy, r, rad(a0), rad(a1), a1 < a0); ctx.stroke(); ctx.restore();
+}
+function label(ctx, text, x, y, color, align = 'left') {
+  ctx.save(); ctx.font = `600 13px ${MONO}`;
+  const w = ctx.measureText(text).width;
+  let lx = align === 'left' ? x : align === 'center' ? x - w / 2 : x - w;
+  lx = clamp(lx, 4, W - w - 4); const ly = clamp(y, 16, H - 6);
+  ctx.globalAlpha = .88; ctx.fillStyle = css('paper'); ctx.fillRect(lx - 3, ly - 13, w + 6, 18);
+  ctx.globalAlpha = 1; ctx.fillStyle = color; ctx.fillText(text, lx, ly); ctx.restore();
+}
+function cross(ctx, x, y, color) { line(ctx, x - 9, y, x + 9, y, color, 2.5); line(ctx, x, y - 9, x, y + 9, color, 2.5); }
+function centerAxes(ctx, O) {
+  line(ctx, 0, O.y, W, O.y, css('grid2'), 1.5); line(ctx, O.x, 0, O.x, H, css('grid2'), 1.5);
+  arrow(ctx, O.x, O.y, O.x + 240, O.y, css('x'), 2); arrow(ctx, O.x, O.y, O.x, O.y + 180, css('y'), 2);
+  label(ctx, 'x', O.x + 244, O.y + 5, css('x')); label(ctx, 'y ↓', O.x + 8, O.y + 184, css('y'));
+  label(ctx, 'O', O.x - 20, O.y - 8, css('ink'));
+}
+function poly(ctx, pts, stroke, fill, w = 2) {
+  ctx.save(); ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = w; ctx.stroke(); }
+  ctx.restore();
+}
+const hd = (o, lab, color) => ({ label: lab, color, get: () => o, set: (x, y) => { o.x = Math.round(x); o.y = Math.round(y); } });
+function nameAt(ctx, p, text, color, dx = 12, dy = -12) { label(ctx, text, p.x + dx, p.y + dy, color); }
+
+/* ---------------- scenes ---------------- */
+const SCENES = {
+  image() {
+    const P = { x: 300, y: 120 };
+    return {
+      note: 'Khung 640×400 pixel. Kéo P. Gốc (0,0) ở góc trên-trái, y tăng khi đi xuống.',
+      handles: [hd(P, 'P', 'vec')], controls: [],
+      draw(ctx) {
+        grid(ctx); const X = css('x'), Y = css('y');
+        line(ctx, P.x, 0, P.x, P.y, X, 1.5, [5, 4]); line(ctx, 0, P.y, P.x, P.y, Y, 1.5, [5, 4]);
+        arrow(ctx, 3, 3, 160, 3, X, 4); arrow(ctx, 3, 3, 3, 160, Y, 4);
+        label(ctx, 'x = cột →', 166, 18, X); label(ctx, 'y = hàng ↓', 10, 182, Y); label(ctx, '(0,0)', 12, 28, css('ink'));
+        label(ctx, 'x = ' + P.x, P.x + 6, 42, X); label(ctx, 'y = ' + P.y, 12, P.y - 8, Y);
+        dot(ctx, P.x, P.y, css('vec'), 7); nameAt(ctx, P, `P(${P.x}, ${P.y})`, css('vec'), 12, 22);
+      },
+      readouts: () => [['x = cột', P.x], ['y = hàng', P.y], ['Point', `new Point(${P.x}, ${P.y})`], ['đọc pixel', `mat.At<byte>(${P.y}, ${P.x})`, true]]
+    };
+  },
+
+  vector() {
+    const A = { x: 120, y: 300 }, B = { x: 420, y: 100 };
+    return {
+      note: 'Kéo A và B. Vector luôn là điểm CUỐI trừ điểm ĐẦU.',
+      handles: [hd(A, 'A', 'ink'), hd(B, 'B', 'vec')], controls: [],
+      draw(ctx) {
+        grid(ctx); const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy);
+        line(ctx, A.x, A.y, B.x, A.y, css('x'), 2.5, [6, 4]); line(ctx, B.x, A.y, B.x, B.y, css('y'), 2.5, [6, 4]);
+        arrow(ctx, A.x, A.y, B.x, B.y, css('vec'), 3);
+        label(ctx, 'dx = ' + hv(String(dx)), (A.x + B.x) / 2, A.y + (dy < 0 ? 22 : -10), css('x'), 'center');
+        label(ctx, 'dy = ' + hv(String(dy)), B.x + (dx < 0 ? -10 : 10), (A.y + B.y) / 2, css('y'), dx < 0 ? 'right' : 'left');
+        const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2, ux = mx - B.x, uy = my - A.y, ul = Math.hypot(ux, uy) || 1;
+        label(ctx, '|v| = ' + hv(f(L)), mx + ux / ul * 24, my + uy / ul * 24, css('vec'), 'center');
+        dot(ctx, A.x, A.y, css('ink')); dot(ctx, B.x, B.y, css('vec'));
+        nameAt(ctx, A, `A(${A.x}, ${A.y})`, css('ink'), -20, 24); nameAt(ctx, B, `B(${B.x}, ${B.y})`, css('vec'));
+      },
+      readouts: () => {
+        const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy);
+        return [['dx = xB − xA', dx, true], ['dy = yB − yA', dy, true], ['|v| = √(dx²+dy²)', f(L, 2), true],
+          ['v̂ = v / |v|', L ? `(${f(dx / L, 3)}, ${f(dy / L, 3)})` : '—', true]];
+      }
+    };
+  },
+
+  angle() {
+    const A = { x: 200, y: 240 }, B = { x: 420, y: 130 };
+    return {
+      note: 'Kéo B vòng quanh A. Thử đưa B sang bên trái A để thấy atan(dy/dx) sai.',
+      handles: [hd(A, 'A', 'ink'), hd(B, 'B', 'vec')], controls: [],
+      draw(ctx) {
+        grid(ctx); const dx = B.x - A.x, dy = B.y - A.y, th = deg(Math.atan2(dy, dx));
+        line(ctx, A.x, A.y, W, A.y, css('x'), 1.5, [6, 4]); label(ctx, '+x (0°)', W - 80, A.y - 8, css('x'));
+        arcDeg(ctx, A.x, A.y, 48, 0, th, css('rot'), 3);
+        const mid = rad(th / 2), side = th >= 0 ? 1 : -1;
+        label(ctx, 'θ = ' + hv(f(th) + '°'), A.x + 92 * Math.cos(mid), A.y + 92 * Math.sin(mid) + side * 14 + 4, css('rot'), 'center');
+        arrow(ctx, A.x, A.y, B.x, B.y, css('vec'), 3);
+        dot(ctx, A.x, A.y, css('ink')); dot(ctx, B.x, B.y, css('vec'));
+        nameAt(ctx, A, `A(${A.x}, ${A.y})`, css('ink'), -30, 26); nameAt(ctx, B, `B(${B.x}, ${B.y})`, css('vec'));
+      },
+      readouts: () => {
+        const dx = B.x - A.x, dy = B.y - A.y, th = deg(Math.atan2(dy, dx));
+        const at = dx === 0 ? 'chia cho 0' : f(deg(Math.atan(dy / dx))) + '°';
+        const out = [['dx', dx], ['dy', dy], ['atan2(dy, dx)', f(th) + '°', true], ['atan(dy / dx)', at + (dx < 0 ? '  ✗ lệch 180°' : ''), true],
+          ['trên màn hình', th > 0 && th < 180 ? 'xuôi kim đồng hồ' : th < 0 ? 'ngược kim đồng hồ' : 'nằm ngang', true]];
+        return out;
+      }
+    };
+  },
+
+  polar() {
+    const O = { x: 320, y: 200 }, st = { r: 160, t: 30 };
+    const P = () => ({ x: O.x + st.r * Math.cos(rad(st.t)), y: O.y + st.r * Math.sin(rad(st.t)) });
+    return {
+      note: 'Gốc O được dời ra giữa khung cho dễ nhìn; trục y vẫn đi xuống như trong ảnh. Kéo P hoặc dùng thanh trượt.',
+      handles: [{ label: 'P', color: 'vec', get: P, set: (x, y) => { st.r = clamp(Math.round(Math.hypot(x - O.x, y - O.y)), 0, 190); st.t = Math.round(deg(Math.atan2(y - O.y, x - O.x))); } }],
+      controls: [
+        { label: 'r', min: 0, max: 190, step: 1, get: () => st.r, set: v => { st.r = v; } },
+        { label: 'θ', min: -180, max: 180, step: 1, unit: '°', get: () => st.t, set: v => { st.t = v; } }],
+      draw(ctx) {
+        grid(ctx); centerAxes(ctx, O); const p = P(), x = p.x - O.x, y = p.y - O.y;
+        ctx.save(); ctx.strokeStyle = css('muted'); ctx.setLineDash([4, 5]); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(O.x, O.y, Math.max(st.r, .1), 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+        line(ctx, O.x, O.y, p.x, O.y, css('x'), 5); line(ctx, p.x, O.y, p.x, p.y, css('y'), 5);
+        arrow(ctx, O.x, O.y, p.x, p.y, css('vec'), 3);
+        arcDeg(ctx, O.x, O.y, 34, 0, st.t, css('rot'), 3);
+        label(ctx, 'r·cosθ = ' + hv(f(x)), (O.x + p.x) / 2, O.y + (y > 0 ? -12 : 24), css('x'), 'center');
+        label(ctx, 'r·sinθ = ' + hv(f(y)), p.x + (x < 0 ? -10 : 10), (O.y + p.y) / 2 + 4, css('y'), x < 0 ? 'right' : 'left');
+        dot(ctx, p.x, p.y, css('vec'), 7); nameAt(ctx, p, `P(r=${st.r}, θ=${st.t}°)`, css('vec'), 12, y < 0 ? -14 : 24);
+      },
+      readouts: () => {
+        const c = Math.cos(rad(st.t)), s = Math.sin(rad(st.t));
+        return [['r', st.r], ['θ', st.t + '°'], ['cos θ', f(c, 3), true], ['sin θ', f(s, 3), true], ['x = r·cos θ', f(st.r * c), true], ['y = r·sin θ', f(st.r * s), true]];
+      }
+    };
+  },
+
+  rotate() {
+    const O = { x: 320, y: 200 }, p = { x: 140, y: -50 }, st = { t: 60 };
+    return {
+      note: 'Kéo P (xanh), đổi θ. P\' (cam) luôn nằm trên cùng vòng tròn: xoay giữ nguyên r, chỉ cộng thêm góc.',
+      handles: [{ label: 'P', color: 'vec', get: () => ({ x: O.x + p.x, y: O.y + p.y }), set: (x, y) => { p.x = Math.round(x - O.x); p.y = Math.round(y - O.y); } }],
+      controls: [{ label: 'θ', min: -180, max: 180, step: 1, unit: '°', get: () => st.t, set: v => { st.t = v; } }],
+      draw(ctx) {
+        grid(ctx); centerAxes(ctx, O);
+        const r = Math.hypot(p.x, p.y), phi = deg(Math.atan2(p.y, p.x)), q = texRot(p, st.t);
+        ctx.save(); ctx.strokeStyle = css('muted'); ctx.setLineDash([4, 5]); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(O.x, O.y, Math.max(r, .1), 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+        arcDeg(ctx, O.x, O.y, r, phi, phi + st.t, css('rot'), 3, [8, 5]);
+        arcDeg(ctx, O.x, O.y, 30, phi, phi + st.t, css('rot'), 2.5);
+        const m = rad(phi + st.t / 2); label(ctx, 'θ', O.x + 44 * Math.cos(m), O.y + 44 * Math.sin(m) + 4, css('rot'), 'center');
+        arrow(ctx, O.x, O.y, O.x + p.x, O.y + p.y, css('vec'), 3);
+        arrow(ctx, O.x, O.y, O.x + q.x, O.y + q.y, css('rot'), 3);
+        dot(ctx, O.x + p.x, O.y + p.y, css('vec'), 7); dot(ctx, O.x + q.x, O.y + q.y, css('rot'), 6);
+        nameAt(ctx, { x: O.x + p.x, y: O.y + p.y }, `P(${p.x}, ${p.y})`, css('vec'));
+        nameAt(ctx, { x: O.x + q.x, y: O.y + q.y }, `P'(${hv(f(q.x))}, ${hv(f(q.y))})`, css('rot'), 12, 22);
+      },
+      readouts: () => {
+        const r = Math.hypot(p.x, p.y), phi = deg(Math.atan2(p.y, p.x)), q = texRot(p, st.t);
+        return [['P', `(${p.x}, ${p.y})`], ['r = |P|', f(r), true], ['φ = atan2(y, x)', f(phi) + '°', true], ['φ + θ', f(phi + st.t) + '°', true],
+          ["P' = R(θ)·P", `(${f(q.x)}, ${f(q.y)})`, true], ['trên màn hình', st.t > 0 ? 'xuôi kim đồng hồ' : st.t < 0 ? 'ngược kim đồng hồ' : 'đứng yên', true]];
+      }
+    };
+  },
+
+  center() {
+    const C = { x: 300, y: 200 }, P = { x: 440, y: 200 }, st = { a: 30 };
+    return {
+      note: 'Kéo tâm C (đen) và điểm P. Mũi tên cam là OpenCV, mũi tên mờ là công thức sách giáo khoa với cùng góc: hai cái quay ngược chiều nhau.',
+      handles: [hd(C, 'C', 'ink'), hd(P, 'P', 'vec')],
+      controls: [{ label: 'angle', min: -180, max: 180, step: 1, get: () => st.a, set: v => { st.a = v; } }],
+      draw(ctx) {
+        grid(ctx); const d = { x: P.x - C.x, y: P.y - C.y }, r = Math.hypot(d.x, d.y), R = cvRot(P, C, st.a), T = texRot(d, st.a);
+        ctx.save(); ctx.strokeStyle = css('muted'); ctx.setLineDash([4, 5]); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(C.x, C.y, Math.max(r, .1), 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+        line(ctx, C.x, C.y, C.x + T.x, C.y + T.y, css('muted'), 1.5, [3, 4]); dot(ctx, C.x + T.x, C.y + T.y, css('muted'), 4);
+        label(ctx, 'SGK', C.x + T.x + 8, C.y + T.y + 16, css('muted'));
+        const a0 = deg(Math.atan2(d.y, d.x)); arcDeg(ctx, C.x, C.y, 40, a0, a0 - st.a, css('rot'), 3);
+        arrow(ctx, C.x, C.y, P.x, P.y, css('vec'), 3); arrow(ctx, C.x, C.y, R.x, R.y, css('rot'), 3);
+        cross(ctx, C.x, C.y, css('ink')); dot(ctx, P.x, P.y, css('vec'), 7); dot(ctx, R.x, R.y, css('rot'), 6);
+        nameAt(ctx, C, `C(${C.x}, ${C.y})`, css('ink'), -40, 30); nameAt(ctx, P, `P(${P.x}, ${P.y})`, css('vec'));
+        nameAt(ctx, R, `P'(${hv(f(R.x))}, ${hv(f(R.y))})`, css('rot'), 12, -12);
+      },
+      readouts: () => {
+        const a = rad(st.a), al = Math.cos(a), be = Math.sin(a), R = cvRot(P, C, st.a);
+        const m02 = (1 - al) * C.x - be * C.y, m12 = be * C.x + (1 - al) * C.y;
+        return [['d = P − C', `(${P.x - C.x}, ${P.y - C.y})`, true], ["P'", `(${f(R.x)}, ${f(R.y)})`, true],
+          ['M hàng 0', `[${f(al, 3)}, ${f(be, 3)}, ${f(m02)}]`, true], ['M hàng 1', `[${f(-be, 3)}, ${f(al, 3)}, ${f(m12)}]`, true],
+          ['trên màn hình', st.a > 0 ? 'ngược kim đồng hồ' : st.a < 0 ? 'xuôi kim đồng hồ' : 'đứng yên', true]];
+      }
+    };
+  },
+
+  deskew() {
+    const Cp = { x: 320, y: 190 }, st = { t: 12, a: 0 }, hw = 150, hh = 60;
+    const outline = [[-hw, -hh], [88, -hh], [88, -hh - 22], [122, -hh - 22], [122, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
+    const toW = (lx, ly) => { const q = texRot({ x: lx, y: ly }, st.t); return { x: Cp.x + q.x, y: Cp.y + q.y }; };
+    const A = {}, B = {};
+    const placeAB = () => { const a = toW(-110, -hh), b = toW(50, -hh); A.x = Math.round(a.x); A.y = Math.round(a.y); B.x = Math.round(b.x); B.y = Math.round(b.y); };
+    placeAB();
+    const alpha = () => deg(Math.atan2(B.y - A.y, B.x - A.x));
+    return {
+      note: 'Con hàng có phần nhô ở góc trên-phải và một mốc tròn bên trái. Đặt A, B trên cạnh trên rồi bấm "angle = α". Thử kéo B lên phần nhô xem α sai thế nào.',
+      handles: [hd(A, 'A', 'vec'), hd(B, 'B', 'vec')],
+      controls: [
+        { label: 'đặt con hàng nghiêng', min: -30, max: 30, step: 1, unit: '°', secret: true, get: () => st.t, set: v => { st.t = v; placeAB(); } },
+        { label: 'angle → OpenCV', min: -45, max: 45, step: .1, get: () => st.a, set: v => { st.a = v; } },
+        { type: 'button', label: 'angle = α', act: () => { st.a = r1(alpha(), 1); } },
+        { type: 'button', label: 'angle = 0', act: () => { st.a = 0; } }],
+      draw(ctx) {
+        grid(ctx);
+        line(ctx, 0, Cp.y, W, Cp.y, css('x'), 1, [2, 6]);
+        const pts = outline.map(([x, y]) => toW(x, y)), mk = toW(-112, 22);
+        poly(ctx, pts, css('grid2'), css('chip'), 2);
+        ctx.save(); ctx.fillStyle = css('muted'); ctx.beginPath(); ctx.arc(mk.x, mk.y, 9, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        const ux = B.x - A.x, uy = B.y - A.y, ul = Math.hypot(ux, uy) || 1;
+        line(ctx, A.x - ux / ul * 900, A.y - uy / ul * 900, A.x + ux / ul * 900, A.y + uy / ul * 900, css('vec'), 1.2, [6, 5]);
+        const rp = pts.map(p => cvRot(p, Cp, st.a)), rm = cvRot(mk, Cp, st.a), A2 = cvRot(A, Cp, st.a), B2 = cvRot(B, Cp, st.a);
+        poly(ctx, rp, css('rot'), null, 2.5);
+        ctx.save(); ctx.strokeStyle = css('rot'); ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(rm.x, rm.y, 9, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+        line(ctx, A2.x, A2.y, B2.x, B2.y, css('rot'), 2); dot(ctx, A2.x, A2.y, css('rot'), 4); dot(ctx, B2.x, B2.y, css('rot'), 4);
+        cross(ctx, Cp.x, Cp.y, css('ink'));
+        dot(ctx, A.x, A.y, css('vec'), 7); dot(ctx, B.x, B.y, css('vec'), 7);
+        nameAt(ctx, A, `A(${A.x}, ${A.y})`, css('vec'), -40, -14); nameAt(ctx, B, `B(${B.x}, ${B.y})`, css('vec'), 8, -14);
+        const res = deg(Math.atan2(B2.y - A2.y, B2.x - A2.x));
+        const okk = Math.abs(res) < .5;
+        label(ctx, okk ? 'A\'B\' đã nằm ngang ✓' : `A'B' còn nghiêng ${hv(f(res))}°`, 10, 22, okk ? css('ok') : css('rot'));
+        label(ctx, 'cam = sau WarpAffine', 10, H - 10, css('rot'));
+      },
+      readouts: () => {
+        const A2 = cvRot(A, Cp, st.a), B2 = cvRot(B, Cp, st.a), res = deg(Math.atan2(B2.y - A2.y, B2.x - A2.x));
+        return [['α = atan2(AB)', f(alpha(), 2) + '°', true], ['angle đang dùng', f(st.a)], ["góc A'B' sau xoay", f(res, 2) + '°', true],
+          ['tâm xoay', `(${Cp.x}, ${Cp.y})`]];
+      }
+    };
+  },
+
+  ambig() {
+    const A = { x: 150, y: 120 }, B = { x: 490, y: 180 };
+    const box = (ctx, cx, cy, tilt, title, color) => {
+      poly(ctx, [{ x: cx - 140, y: cy - 46 }, { x: cx + 140, y: cy - 46 }, { x: cx + 140, y: cy + 50 }, { x: cx - 140, y: cy + 50 }], css('line'), css('paper'), 1);
+      const corners = [[-60, -18], [60, -18], [60, 18], [-60, 18]].map(([x, y]) => { const q = texRot({ x, y }, tilt); return { x: cx + q.x, y: cy + 4 + q.y }; });
+      poly(ctx, corners, color, css('chip'), 2.5);
+      const m = texRot({ x: -42, y: 0 }, tilt); ctx.save(); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(cx + m.x, cy + 4 + m.y, 7, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      label(ctx, title, cx - 134, cy - 30, css('muted'));
+    };
+    return {
+      note: 'Cùng một đường thẳng, hai chiều đi. Hai ô dưới: con hàng (mốc tròn ở đầu trái) sau khi xoay bằng góc thô và bằng góc đã chuẩn hoá.',
+      handles: [hd(A, 'A', 'vec'), hd(B, 'B', 'rot')], controls: [],
+      draw(ctx) {
+        grid(ctx);
+        const ux = B.x - A.x, uy = B.y - A.y, ul = Math.hypot(ux, uy) || 1, nx = -uy / ul, ny = ux / ul;
+        line(ctx, A.x - ux / ul * 900, A.y - uy / ul * 900, A.x + ux / ul * 900, A.y + uy / ul * 900, css('grid2'), 1.5, [6, 5]);
+        arrow(ctx, A.x - nx * 7, A.y - ny * 7, B.x - nx * 7, B.y - ny * 7, css('vec'), 2.5);
+        arrow(ctx, B.x + nx * 7, B.y + ny * 7, A.x + nx * 7, A.y + ny * 7, css('rot'), 2.5);
+        const ab = deg(Math.atan2(uy, ux)), ba = deg(Math.atan2(-uy, -ux));
+        dot(ctx, A.x, A.y, css('vec'), 7); dot(ctx, B.x, B.y, css('rot'), 7);
+        nameAt(ctx, A, 'A → B: ' + hv(f(ab) + '°'), css('vec'), -20, -16); nameAt(ctx, B, 'B → A: ' + hv(f(ba) + '°'), css('rot'), -60, 26);
+        const used1 = ba, used2 = normLine(ba);
+        box(ctx, 165, 330, ab - used1, 'xoay bằng góc thô B→A', css('bad'));
+        box(ctx, 475, 330, ab - used2, 'xoay bằng góc chuẩn hoá', Math.abs(normLine(ab - used2)) < .5 && Math.abs(ab - used2) < 90 ? css('ok') : css('bad'));
+      },
+      readouts: () => {
+        const ux = B.x - A.x, uy = B.y - A.y, ab = deg(Math.atan2(uy, ux)), ba = deg(Math.atan2(-uy, -ux));
+        return [['atan2 A → B', f(ab) + '°', true], ['atan2 B → A', f(ba) + '°', true], ['chuẩn hoá A → B', f(normLine(ab)) + '°', true], ['chuẩn hoá B → A', f(normLine(ba)) + '°', true]];
+      }
+    };
+  }
+};
+
+/* ---------------- levels ---------------- */
+const NICE = [0, 30, 45, 60, 90, 120, 135, 150, 180, -30, -45, -60, -90, -120, -135, -150];
+const LEVELS = [
+  {
+    id: 1, scene: 'image', name: 'Hệ toạ độ ảnh',
+    lede: 'Mọi toạ độ trong Program.cs đều sống trong hệ này.',
+    problem: 'Ở trường, gốc O nằm dưới-trái và trục y đi lên. Trong OpenCV, gốc (0,0) là pixel trên-trái và trục y đi <b>xuống</b>. Công thức góc học ở trường vẫn đúng, nhưng chiều quay nhìn trên màn hình bị lật. Bẫy thứ hai: <code>Point(x, y)</code> ghi cột trước, còn <code>mat.At(row, col)</code> ghi hàng trước.',
+    method: 'Trước khi tính, vẽ hai trục ra giấy: x sang phải là cột, y xuống dưới là hàng. Mỗi lần gõ <code>At(</code>, đọc thầm "hàng, cột" tức là "y, x".',
+    formula: 'Point(x, y)         x = cột, y = hàng\nmat.At<T>(y, x)     hàng trước, cột sau\nRect(x, y, w, h)    góc trên-trái = (x, y)\nr.Right  = x + w    pixel cuối thuộc rect: x + w − 1\nr.Bottom = y + h',
+    example: 'Ảnh 640×480. Điểm cách mép trái 300 px, cách mép trên 100 px ⇒ <code>Point(300, 100)</code> ⇒ đọc bằng <code>mat.At&lt;byte&gt;(100, 300)</code>. Điểm (300, 400) nằm <b>thấp hơn</b> (300, 100) vì y lớn hơn.',
+    gen() {
+      if (Math.random() < .5) {
+        const x = ri(20, 620), y = ri(20, 460);
+        return { prompt: `Ảnh 640×480. Điểm P cách mép trái <b>${x}</b> px và cách mép trên <b>${y}</b> px. Bạn đọc pixel đó bằng <code>mat.At&lt;byte&gt;(a, b)</code>. Điền a và b.`,
+          fields: [{ label: 'a', ans: y, tol: 0 }, { label: 'b', ans: x, tol: 0 }],
+          hints: ['At nhận (hàng, cột). Hàng đếm từ trên xuống.', 'Hàng chính là y, cột chính là x.'],
+          sol: `P = Point(${x}, ${y}) ⇒ hàng = y = ${y}, cột = x = ${x} ⇒ <code>At(${y}, ${x})</code>.` };
+      }
+      const x = ri(2, 40) * 10, y = ri(2, 30) * 10, w = ri(5, 30) * 10, h = ri(5, 20) * 10;
+      return { prompt: `<code>var r = new Rect(${x}, ${y}, ${w}, ${h});</code> Tính <code>r.Right</code> và <code>r.Bottom</code>.`,
+        fields: [{ label: 'r.Right', ans: x + w, tol: 0 }, { label: 'r.Bottom', ans: y + h, tol: 0 }],
+        hints: ['Rect(x, y, w, h): (x, y) là góc trên-trái.', 'Right = x + w, Bottom = y + h. Vì y đi xuống nên Bottom lớn hơn y.'],
+        sol: `Right = ${x} + ${w} = ${x + w}; Bottom = ${y} + ${h} = ${y + h}. Pixel cuối cùng còn thuộc Rect là (${x + w - 1}, ${y + h - 1}).` };
+    },
+    code: {
+      task: 'Bài giấy bút, gắn với hàm <code>OrderCorners</code> trong Program.cs. Hàm đó dùng x + y và x − y để gọi tên 4 góc. Với 4 điểm dưới đây, tự tính x + y và x − y, rồi chỉ ra điểm nào là trên-trái, trên-phải, dưới-phải, dưới-trái.',
+      tests: [['(10, 10)', 'x+y = ?   x−y = ?'], ['(200, 15)', 'x+y = ?   x−y = ?'], ['(205, 120)', 'x+y = ?   x−y = ?'], ['(8, 118)', 'x+y = ?   x−y = ?']],
+      heads: ['Điểm', 'Bạn tự điền'],
+      ask: 'Nếu con hàng nghiêng đúng 45°, mẹo x + y còn chọn đúng góc trên-trái không? Vẽ ra giấy rồi trả lời.'
+    }
+  },
+  {
+    id: 2, scene: 'vector', name: 'Vector = B − A',
+    lede: 'Nền của mọi phép đo cạnh, kể cả hàm Dist trong WarpToRect.',
+    problem: 'Hai điểm rời rạc chưa nói gì về cạnh. Muốn biết cạnh dài bao nhiêu và nghiêng thế nào, bạn cần một mũi tên đi từ A tới B.',
+    method: 'Lấy điểm cuối trừ điểm đầu, từng thành phần một. Độ dài là cạnh huyền của tam giác vuông có hai cạnh góc vuông dx và dy.',
+    formula: 'v   = B − A = (dx, dy) = (xB − xA, yB − yA)\n|v| = √(dx² + dy²)\nv̂   = v / |v|        vector đơn vị, dài đúng 1',
+    example: 'A(100, 200), B(400, 600): dx = 300, dy = 400. |v| = √(90 000 + 160 000) = √250 000 = 500. v̂ = (0.6, 0.8). Đi ngược B → A thì dx = −300, dy = −400, độ dài vẫn là 500.',
+    gen() {
+      let [a, b, c] = pick([[3, 4, 5], [5, 12, 13], [8, 15, 17], [7, 24, 25], [6, 8, 10], [9, 12, 15]]);
+      if (Math.random() < .5) [a, b] = [b, a];
+      const k = pick([5, 10, 20]);
+      const dx = a * k * (Math.random() < .5 ? -1 : 1), dy = b * k * (Math.random() < .5 ? -1 : 1);
+      const A = { x: ri(2, 20) * 10 + Math.max(0, -dx), y: ri(2, 20) * 10 + Math.max(0, -dy) }, B = { x: A.x + dx, y: A.y + dy };
+      return { prompt: `A(${A.x}, ${A.y}), B(${B.x}, ${B.y}). Tính vector v = B − A và độ dài |v|.`,
+        fields: [{ label: 'dx', ans: dx, tol: 0 }, { label: 'dy', ans: dy, tol: 0 }, { label: '|v|', ans: c * k, tol: .5 }],
+        hints: ['Điểm CUỐI trừ điểm ĐẦU: dx = xB − xA, dy = yB − yA.', '|v| = √(dx² + dy²). Bình phương làm mất dấu âm nên |v| luôn dương.'],
+        sol: `dx = ${B.x} − ${A.x} = ${dx}; dy = ${B.y} − ${A.y} = ${dy}; |v| = √(${dx * dx} + ${dy * dy}) = √${dx * dx + dy * dy} = ${c * k}.` };
+    },
+    code: {
+      sig: 'static double DoDai(Point2f a, Point2f b)',
+      tests: [['(100,200) → (400,600)', '500'], ['(0,0) → (5,12)', '13'], ['(3,3) → (3,3)', '0'], ['(400,600) → (100,200)', '500']],
+      ask: 'Mở hàm <code>Dist</code> bên trong <code>WarpToRect</code> (Program.cs). Nó là công thức nào ở trên? Chỉ ra dx và dy nằm ở đâu trong dòng code đó.',
+      hint: '<code>Math.Sqrt</code>. Hoặc <code>double.Hypot(x, y)</code> trên .NET 7 trở lên.'
+    }
+  },
+  {
+    id: 3, scene: 'angle', name: 'Góc: atan2',
+    lede: 'Từ hai điểm trên cạnh ra một con số độ nghiêng.',
+    problem: 'Cạnh con hàng nghiêng bao nhiêu độ? Bạn có dx, dy và cần một con số θ.',
+    method: 'tan θ = dy / dx. Nhưng atan(dy / dx) chỉ thấy tỉ số, nên (1, 1) và (−1, −1) cùng ra 45°. atan2(dy, dx) xét dấu từng số riêng, biết vector nằm ở góc phần tư nào và trả về góc trong (−180°, 180°].',
+    formula: 'θ  = Math.Atan2(dy, dx)     radian; dy TRƯỚC, dx SAU\nθ° = θ · 180 / π\n\nảnh (y đi xuống):\n  θ > 0  ⇒ quay XUÔI kim đồng hồ trên màn hình\n  θ < 0  ⇒ quay NGƯỢC kim đồng hồ',
+    example: 'A(0, 0) → B(100, −100), chỉ lên-phải trên màn hình: atan2(−100, 100) = −45°. Còn B(−100, 100), chỉ xuống-trái: atan2(100, −100) = 135°, trong khi atan(100 / −100) = −45°, lệch đúng 180°.',
+    gen() {
+      let dx, dy;
+      if (Math.random() < .5) { const a = pick(NICE), r = pick([100, 200]); dx = r1(r * Math.cos(rad(a)), 1); dy = r1(r * Math.sin(rad(a)), 1); }
+      else { do { dx = ri(-20, 20) * 10; dy = ri(-20, 20) * 10; } while (dx === 0 || dy === 0); }
+      const th = deg(Math.atan2(dy, dx)), base = dx !== 0 ? deg(Math.atan(Math.abs(dy) / Math.abs(dx))) : 90;
+      return { prompt: `Vector v = (dx, dy) = (<b>${n(dx)}</b>, <b>${n(dy)}</b>) trong toạ độ ảnh. <code>Math.Atan2(dy, dx)</code> đổi ra độ bằng bao nhiêu? (sai số cho phép 0.5°, được dùng máy tính)`,
+        fields: [{ label: 'θ (độ)', ans: th, tol: .5 }],
+        hints: ['Tính góc nhọn trước: atan(|dy| / |dx|), chưa quan tâm dấu.', 'Rồi xét dấu: dx < 0 ⇒ nửa trái nên |θ| > 90°; dy < 0 ⇒ θ âm (vector chỉ lên trên màn hình).'],
+        sol: `Góc nhọn = atan(${n(Math.abs(dy))} / ${n(Math.abs(dx))}) = ${f(base)}°. dx ${dx >= 0 ? '≥ 0' : '< 0'}, dy ${dy >= 0 ? '≥ 0' : '< 0'} ⇒ θ = ${f(th)}°.${dy < 0 ? ' Âm ⇒ vector chỉ lên trên màn hình.' : dy > 0 ? ' Dương ⇒ vector chỉ xuống dưới màn hình.' : ''}` };
+    },
+    code: {
+      sig: 'static double GocDo(Point2f a, Point2f b)   // trả về độ',
+      tests: [['(0,0) → (100,0)', '0'], ['(0,0) → (0,100)', '90'], ['(0,0) → (−100,0)', '180'], ['(0,0) → (100,−100)', '−45'], ['(10,10) → (−90,110)', '135']],
+      ask: 'Với test cuối, in thêm kết quả của atan(dy/dx) cạnh atan2. Lệch bao nhiêu độ, và vì sao đúng con số đó?',
+      hint: '<code>Math.Atan2(y, x)</code> (chú ý thứ tự), <code>Math.PI</code>.'
+    }
+  },
+  {
+    id: 4, scene: 'polar', name: 'Toạ độ cực (r, θ)',
+    lede: 'Cách nhìn biến phép xoay thành phép cộng.',
+    problem: 'Xoay một điểm nghĩa là giữ nguyên khoảng cách tới tâm và chỉ đổi hướng. Trong (x, y) điều này khó thấy. Trong (r, θ) nó chỉ là cộng thêm vào θ.',
+    method: 'Mô tả điểm bằng r (cách gốc bao xa) và θ (theo hướng nào). Chiếu r lên trục x bằng cos, lên trục y bằng sin. Đi ngược lại thì dùng Pythagoras và atan2.',
+    formula: '(r, θ) → (x, y):   x = r·cos θ      y = r·sin θ\n(x, y) → (r, θ):   r = √(x² + y²)   θ = atan2(y, x)\n\n θ     0°    30°    45°    60°    90°\n cos   1     0.866  0.707  0.5    0\n sin   0     0.5    0.707  0.866  1',
+    example: 'r = 200, θ = 30°: x = 200·0.866 = 173.2, y = 200·0.5 = 100. Vì y đi xuống nên trên màn hình điểm này nằm phía dưới-phải gốc.',
+    gen() {
+      const r = ri(5, 19) * 10, a = pick(NICE), x = r * Math.cos(rad(a)), y = r * Math.sin(rad(a));
+      return { prompt: `Điểm có r = <b>${r}</b>, θ = <b>${a}°</b> (gốc O, trục y đi xuống). Tính x và y.`,
+        fields: [{ label: 'x', ans: x, tol: .6 }, { label: 'y', ans: y, tol: .6 }],
+        hints: ['x = r·cos θ, y = r·sin θ. Dùng bảng cos/sin ở phần Công thức.', 'cos(−θ) = cos θ, sin(−θ) = −sin θ; cos(180° − θ) = −cos θ, sin(180° − θ) = sin θ.'],
+        sol: `x = ${r}·cos(${a}°) = ${r}·${pn(f(Math.cos(rad(a)), 3))} = ${f(x)}; y = ${r}·sin(${a}°) = ${r}·${pn(f(Math.sin(rad(a)), 3))} = ${f(y)}.` };
+    },
+    code: {
+      sig: 'static Point2f TuCuc(double r, double gocDo)\nstatic (double r, double gocDo) SangCuc(Point2f p)',
+      tests: [['TuCuc(200, 30)', '(173.2, 100)'], ['TuCuc(100, −90)', '(0, −100)'], ['SangCuc((0, 50))', '(50, 90)'], ['SangCuc((−30, −30))', '(42.43, −135)']],
+      ask: 'Viết vòng lặp θ từ −179 đến 180: SangCuc(TuCuc(100, θ)) có trả lại đúng θ không? Chỗ nào lệch, vì sao?',
+      hint: '<code>Math.Cos</code>, <code>Math.Sin</code> nhận <b>radian</b>, không nhận độ.'
+    }
+  },
+  {
+    id: 5, scene: 'rotate', name: 'Xoay quanh gốc',
+    lede: 'Ma trận xoay không cần học thuộc nếu đã hiểu bậc 4.',
+    problem: 'Cho P và một góc θ. Sau khi xoay quanh gốc O, P đi tới đâu?',
+    method: 'Đổi P sang cực: (r, φ). Xoay là giữ r và cộng góc: (r, φ + θ). Đổi ngược về (x, y) rồi khai triển cos(φ + θ) và sin(φ + θ). Toàn bộ ma trận xoay chỉ có vậy.',
+    formula: "x' = r·cos(φ+θ) = r·cosφ·cosθ − r·sinφ·sinθ = x·cosθ − y·sinθ\ny' = r·sin(φ+θ) = r·sinφ·cosθ + r·cosφ·sinθ = x·sinθ + y·cosθ\n\n        ┌ cosθ  −sinθ ┐\nR(θ) =  └ sinθ   cosθ ┘        P' = R(θ)·P",
+    example: "P(100, 0), θ = 90°: x' = 100·0 − 0·1 = 0, y' = 100·1 + 0·0 = 100 ⇒ P'(0, 100). Trong ảnh, (0, 100) nằm ngay <b>dưới</b> gốc: công thức sách giáo khoa với θ dương quay <b>xuôi</b> kim đồng hồ trên màn hình.",
+    gen() {
+      let px, py; do { px = ri(-15, 15) * 10; py = ri(-15, 15) * 10; } while (px === 0 && py === 0);
+      const t = pick([90, -90, 180, 30, 45, 60, -30, -60, -45]), c = Math.cos(rad(t)), s = Math.sin(rad(t));
+      const x = px * c - py * s, y = px * s + py * c;
+      return { prompt: `Xoay P(<b>${px}</b>, <b>${py}</b>) quanh gốc O một góc θ = <b>${t}°</b> theo công thức sách giáo khoa R(θ). Tính P'.`,
+        fields: [{ label: "x'", ans: x, tol: .6 }, { label: "y'", ans: y, tol: .6 }],
+        hints: ["x' = x·cosθ − y·sinθ", "y' = x·sinθ + y·cosθ. Tính cosθ, sinθ trước rồi mới thay số; cẩn thận dấu khi sinθ âm."],
+        sol: `cos ${t}° = ${f(c, 3)}, sin ${t}° = ${f(s, 3)}. x' = ${pn(px)}·${pn(f(c, 3))} − ${pn(py)}·${pn(f(s, 3))} = ${f(x)}; y' = ${pn(px)}·${pn(f(s, 3))} + ${pn(py)}·${pn(f(c, 3))} = ${f(y)}.` };
+    },
+    code: {
+      sig: 'static Point2f XoayQuanhGoc(Point2f p, double gocDo)',
+      tests: [['(100, 0), 90', '(0, 100)'], ['(0, 100), 90', '(−100, 0)'], ['(100, 0), 180', '(−100, 0)'], ['(100, 100), 45', '(0, 141.42)']],
+      ask: 'Tự kiểm: xoay θ rồi xoay −θ có về đúng P không? Độ dài |P\'| có luôn bằng |P| không? Viết hai dòng kiểm tra đó thay vì tin bảng test.',
+      hint: 'Dùng lại cách đổi độ sang radian của bậc 4.'
+    }
+  },
+  {
+    id: 6, scene: 'center', name: 'Quanh tâm C, kiểu OpenCV',
+    lede: 'Đúng thứ Cv2.GetRotationMatrix2D trả về.',
+    problem: 'OpenCV xoay ảnh quanh tâm con hàng chứ không quanh (0, 0). Và nó chọn dấu ngược sách giáo khoa: <code>angle</code> dương thì ảnh quay <b>ngược</b> kim đồng hồ trên màn hình.',
+    method: 'Ba bước: dời C về gốc (d = P − C), xoay d, dời trở lại (P\' = C + d\'). <code>GetRotationMatrix2D</code> gói cả ba bước vào một ma trận 2×3; cột thứ ba chính là phần "dời trở lại".',
+    formula: "d  = P − C                        (a = angle của OpenCV)\nx' = cx + dx·cos a + dy·sin a\ny' = cy − dx·sin a + dy·cos a\n\nα = s·cos a    β = s·sin a       (s = scale, thường là 1)\nM = ┌  α   β   (1−α)·cx − β·cy ┐\n    └ −β   α   β·cx + (1−α)·cy ┘\nx' = M00·x + M01·y + M02\ny' = M10·x + M11·y + M12",
+    example: "C(300, 200), P(400, 200), angle = 90: d = (100, 0) ⇒ x' = 300 + 0 + 0 = 300, y' = 200 − 100 + 0 = 100 ⇒ P'(300, 100). Điểm bên phải tâm đi <b>lên</b> ⇒ ngược kim đồng hồ. M = [[0, 1, 100], [−1, 0, 500]]; thử lại: x' = 0·400 + 1·200 + 100 = 300 ✓, y' = −400 + 0 + 500 = 100 ✓.",
+    gen() {
+      const C = { x: ri(20, 40) * 10, y: ri(12, 28) * 10 };
+      let dx, dy; do { dx = ri(-12, 12) * 10; dy = ri(-10, 10) * 10; } while (dx === 0 && dy === 0);
+      const a = pick([90, -90, 180, 30, -30, 60, 45]), P = { x: C.x + dx, y: C.y + dy }, R = cvRot(P, C, a);
+      const ca = Math.cos(rad(a)), sa = Math.sin(rad(a));
+      return { prompt: `<code>Cv2.GetRotationMatrix2D(new Point2f(${C.x}, ${C.y}), ${a}, 1.0)</code>, rồi áp lên điểm P(<b>${P.x}</b>, <b>${P.y}</b>). P' = ?`,
+        fields: [{ label: "x'", ans: R.x, tol: .6 }, { label: "y'", ans: R.y, tol: .6 }],
+        hints: ['Dời về tâm trước: d = P − C.', "Quy ước OpenCV: x' = cx + dx·cos a + dy·sin a; y' = cy − dx·sin a + dy·cos a."],
+        sol: `d = (${dx}, ${dy}); cos ${a}° = ${f(ca, 3)}, sin ${a}° = ${f(sa, 3)}. x' = ${C.x} + ${pn(dx)}·${pn(f(ca, 3))} + ${pn(dy)}·${pn(f(sa, 3))} = ${f(R.x)}; y' = ${C.y} − ${pn(dx)}·${pn(f(sa, 3))} + ${pn(dy)}·${pn(f(ca, 3))} = ${f(R.y)}.` };
+    },
+    code: {
+      sig: 'static Point2f XoayNhuOpenCV(Point2f p, Point2f c, double angleDo)',
+      tests: [['p(400,200) c(300,200) 90', '(300, 100)'], ['p(300,300) c(300,200) 90', '(400, 200)'], ['p(400,200) c(300,200) 180', '(200, 200)'], ['p(400,200) c(300,200) 30', '(386.6, 150)']],
+      ask: 'Đối chiếu với chính OpenCV: lấy M từ <code>Cv2.GetRotationMatrix2D(c, angle, 1.0)</code>, đọc 6 số bằng <code>M.At&lt;double&gt;(hàng, cột)</code>, tự nhân với (x, y, 1). Hàm của bạn phải khớp tới 3 chữ số thập phân. Không khớp thì sai ở dấu nào?',
+      hint: 'M là Mat 2×3 kiểu CV_64F. Nhớ <code>using var</code> cho Mat.'
+    }
+  },
+  {
+    id: 7, scene: 'deskew', name: 'Chống nghiêng',
+    lede: 'Bước còn thiếu trước Giai đoạn 2 của bạn.',
+    problem: 'Con hàng nằm nghiêng nên 4 góc cắt ở Giai đoạn 2 lệch vị trí. Cần xoay ảnh để cạnh dài nằm ngang trước khi cắt.',
+    method: 'Lấy hai điểm A, B trên phần thẳng của cạnh dài, tránh góc có phần nhô (docs mục 2.4c). Đo α bằng atan2. α > 0 nghĩa là cạnh đang nghiêng xuôi kim đồng hồ, nên cần quay ngược kim đồng hồ α độ. Với OpenCV, ngược kim đồng hồ là angle dương ⇒ angle = +α.',
+    formula: 'α = atan2(yB − yA, xB − xA) · 180/π\nM = Cv2.GetRotationMatrix2D(tâm, α, 1.0)\nCv2.WarpAffine(src, dst, M, src.Size())\nkiểm tra:  A\'.y ≈ B\'.y',
+    example: 'A(100, 100), B(500, 170.5): dx = 400, dy = 70.5, α = atan2(70.5, 400) = 10.0° ⇒ angle = +10. Trên bàn thí nghiệm, kéo B lên phần nhô ở góc phải rồi bấm "angle = α": con hàng xoay xong vẫn lệch, vì hệ quy chiếu đã bị chính khuyết tật kéo đi.',
+    gen() {
+      let al; do { al = ri(-20, 20); } while (Math.abs(al) < 2);
+      const dx = ri(30, 45) * 10, dy = r1(dx * Math.tan(rad(al)), 1);
+      const A = { x: ri(5, 15) * 10, y: ri(15, 25) * 10 }, By = r1(A.y + dy, 1), th = deg(Math.atan2(By - A.y, dx));
+      return { prompt: `Hai điểm trên cạnh dài của con hàng: A(<b>${A.x}</b>, <b>${A.y}</b>), B(<b>${A.x + dx}</b>, <b>${n(By)}</b>). Tính α của cạnh, và số <code>angle</code> cần truyền vào <code>GetRotationMatrix2D</code> để cạnh nằm ngang.`,
+        fields: [{ label: 'α (độ)', ans: th, tol: .3 }, { label: 'angle', ans: th, tol: .3 }],
+        hints: ['α = atan2(yB − yA, xB − xA), đổi ra độ.', `α ${th > 0 ? '> 0: cạnh đi xuống bên phải, đang nghiêng xuôi kim đồng hồ' : '< 0: cạnh đi lên bên phải, đang nghiêng ngược kim đồng hồ'}. OpenCV: angle dương = quay ngược kim đồng hồ.`],
+        sol: `dx = ${dx}, dy = ${n(By - A.y, 1)} ⇒ α = atan2(${n(By - A.y, 1)}, ${dx}) = ${f(th)}°. Cần quay ngược lại đúng α; theo quy ước OpenCV đó là angle = ${f(th)}.` };
+    },
+    code: {
+      steps: [
+        'Trong <code>CropLargestRegion</code>, sau khi có <code>best</code>, lấy <code>Cv2.MinAreaRect(best)</code> và 4 đỉnh <code>rect.Points()</code>.',
+        'Dùng <code>DoDai</code> (bậc 2) tìm cạnh dài nhất trong 4 cạnh, rồi <code>GocDo</code> (bậc 3) đo α của cạnh đó.',
+        '<code>Dbg.Log</code> ra tên ảnh, <code>rect.Angle</code> và α của bạn. Chạy cả thư mục. Chưa xoay gì cả, chỉ đo.'],
+      ask: 'α của các ảnh nằm trong khoảng nào? Đó là câu hỏi số 5 trong docs. Câu phụ: toạ độ <code>best</code> đang ở ảnh thu nhỏ theo <code>scale</code>. α có cần chia cho <code>scale</code> không? Vì sao?'
+    }
+  },
+  {
+    id: 8, scene: 'ambig', name: 'Bẫy 180° và 90°',
+    lede: 'Vì sao có ảnh xoay đúng, có ảnh lộn ngược.',
+    problem: 'Cùng một cạnh, nếu code lấy điểm từ phải sang trái thì atan2 ra −170° thay vì 10°. Xoay −170° là con hàng lộn ngược. MinAreaRect còn có thể đổi chỗ Width và Height, làm góc lệch 90°.',
+    method: 'Một đường thẳng không có chiều, nên góc của nó chỉ có nghĩa theo modulo 180°. Đưa về khoảng (−90°, 90°]. Chuẩn hoá chỉ sửa được góc của cạnh. Nó không biết đầu nào là đầu con hàng; việc đó cần một mốc bất đối xứng (fiducial).',
+    formula: 'a_chuẩn = a − 180·k\nchọn số nguyên k sao cho  −90° < a_chuẩn ≤ 90°',
+    example: 'Đi từ B(500, 170.5) về A(100, 100): dx = −400, dy = −70.5 ⇒ atan2 = −170.0°. Chuẩn hoá: −170 + 180 = 10°, trùng với chiều A → B ✓. Một ví dụ khác: 100° − 180° = −80°.',
+    gen() {
+      let al; do { al = ri(-25, 25); } while (Math.abs(al) < 3);
+      const dx = ri(30, 45) * 10, dy = r1(dx * Math.tan(rad(al)), 1);
+      const A = { x: ri(5, 15) * 10, y: ri(15, 25) * 10 }, B = { x: A.x + dx, y: r1(A.y + dy, 1) };
+      const vx = A.x - B.x, vy = r1(A.y - B.y, 1), raw = deg(Math.atan2(vy, vx)), nm = normLine(raw);
+      return { prompt: `Code của bạn duyệt contour theo chiều ngược, nên điểm đầu là B(<b>${B.x}</b>, <b>${n(B.y)}</b>) và điểm cuối là A(<b>${A.x}</b>, <b>${A.y}</b>). Tính góc thô atan2, rồi góc sau khi chuẩn hoá về (−90°, 90°].`,
+        fields: [{ label: 'thô (độ)', ans: raw, tol: .3 }, { label: 'chuẩn hoá', ans: nm, tol: .3 }],
+        hints: ['Vector đi từ B tới A: (xA − xB, yA − yB). dx âm ⇒ góc thô ở nửa trái, |θ| > 90°.', 'Chuẩn hoá: cộng hoặc trừ 180° cho tới khi rơi vào (−90°, 90°].'],
+        sol: `v = (${vx}, ${n(vy, 1)}) ⇒ thô = ${f(raw)}°. ${raw > 90 ? `${f(raw)} − 180 = ${f(nm)}°` : `${f(raw)} + 180 = ${f(nm)}°`}. Bằng đúng góc của chiều A → B.` };
+    },
+    code: {
+      sig: 'static double ChuanHoaGocDuong(double a)   // về (−90, 90]',
+      tests: [['10', '10'], ['−170', '10'], ['190', '10'], ['100', '−80'], ['−90', '90'], ['90', '90']],
+      ask: 'In <code>rect.Size.Width</code>, <code>rect.Size.Height</code>, <code>rect.Angle</code> của MinAreaRect cho 5 ảnh thật. Ảnh nào có Width < Height? Viết luật đưa về "cạnh dài nằm ngang" và chạy lại bậc 7.',
+      hint: 'Vòng <code>while</code>, hoặc một phép <code>%</code> (cẩn thận: % của C# giữ dấu số bị chia).'
+    }
+  }
+];
+
+/* ---------------- canvas plumbing ---------------- */
+const cv = $('#cv'), ctx = cv.getContext('2d');
+let drag = null;
+function sizeCanvas() {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr)); draw();
+}
+function draw() {
+  if (!sc) return;
+  ctx.setTransform(cv.width / W, 0, 0, cv.height / H, 0, 0); ctx.clearRect(0, 0, W, H);
+  sc.draw(ctx);
+  for (const h of sc.handles) { const p = h.get(); ring(ctx, p.x, p.y, css(h.color)); }
+}
+const toW = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; };
+function nearest(p) {
+  let best = null, bd = 1e9;
+  for (const h of sc.handles) { const q = h.get(), d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = h; } }
+  return { best, bd };
+}
+cv.addEventListener('pointerdown', e => {
+  if (!sc) return; const { best, bd } = nearest(toW(e));
+  if (best && bd < (e.pointerType === 'touch' ? 40 : 24)) { drag = best; cv.setPointerCapture(e.pointerId); cv.classList.add('dragging'); e.preventDefault(); }
+});
+cv.addEventListener('pointermove', e => {
+  if (!sc) return; const p = toW(e);
+  if (drag) { drag.set(clamp(p.x, 0, W), clamp(p.y, 0, H)); revealNow = false; refresh(); }
+  else { cv.style.cursor = nearest(p).bd < 24 ? 'grab' : 'default'; }
+});
+['pointerup', 'pointercancel'].forEach(t => cv.addEventListener(t, () => { drag = null; cv.classList.remove('dragging'); }));
+
+function buildControls() {
+  const box = $('#ctrls'); box.innerHTML = '';
+  sc.controls.forEach((c, i) => {
+    if (c.type === 'button') {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost small'; b.textContent = c.label;
+      b.addEventListener('click', () => { c.act(); revealNow = false; refresh(); }); box.append(b); return;
+    }
+    const id = `ctl-${cur.id}-${i}`, wrap = document.createElement('label');
+    wrap.className = 'ctl'; wrap.htmlFor = id;
+    wrap.innerHTML = `<span class="cl">${esc(c.label)}</span><input type="range" id="${id}" min="${c.min}" max="${c.max}" step="${c.step}"><output></output>`;
+    const inp = wrap.querySelector('input');
+    inp.addEventListener('input', () => { c.set(Number(inp.value)); revealNow = false; refresh(); });
+    c._inp = inp; c._out = wrap.querySelector('output'); box.append(wrap);
+  });
+  box.hidden = sc.controls.length === 0;
+}
+function syncControls() {
+  for (const c of sc.controls) {
+    if (!c._inp) continue; const v = c.get();
+    if (Number(c._inp.value) !== v) c._inp.value = v;
+    c._out.textContent = (c.secret && S.hide && !revealNow) ? '?' : n(v, 1) + (c.unit || '');
+  }
+}
+function renderReadouts() {
+  const masked = S.hide && !revealNow;
+  $('#ro').innerHTML = sc.readouts().map(([k, v, res]) => {
+    const m = res && masked;
+    return `<div class="r"><dt>${esc(k)}</dt><dd${m ? ' class="masked" tabindex="0" role="button" title="Bấm để so kết quả"' : ''}>${m ? '?' : esc(v)}</dd></div>`;
+  }).join('');
+}
+function refresh() { draw(); renderReadouts(); syncControls(); }
+$('#ro').addEventListener('click', e => { if (e.target.closest('dd.masked')) { revealNow = true; refresh(); } });
+$('#ro').addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('dd.masked')) { e.preventDefault(); revealNow = true; refresh(); } });
+
+/* ---------------- quiz ---------------- */
+function newQuestion() {
+  q = cur.gen(); qs = { tries: 0, revealed: false, done: false };
+  $('#qprompt').innerHTML = q.prompt;
+  $('#qfields').innerHTML = q.fields.map((fd, k) => `<label class="fld" for="qf-${k}"><span>${esc(fd.label)} =</span><input id="qf-${k}" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"></label>`).join('');
+  $('#qfeed').innerHTML = ''; $('#qsol').hidden = true; $('#qsol').innerHTML = '';
+  $('#btnReveal').disabled = true; $('#btnCheck').disabled = false;
+  $('#qfields').querySelectorAll('input').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') check(); }));
+}
+function showSol() { const el = $('#qsol'); el.innerHTML = `<span class="tag">Lời giải</span>${q.sol}`; el.hidden = false; }
+function check() {
+  if (qs.done) return; let all = true;
+  q.fields.forEach((fd, k) => {
+    const el = $('#qf-' + k), raw = el.value.trim().replace(/,/g, '.').replace(/−/g, '-'), v = Number(raw);
+    const ok = raw !== '' && isFinite(v) && Math.abs(v - fd.ans) <= fd.tol + 1e-9;
+    el.parentElement.classList.toggle('ok', ok); el.parentElement.classList.toggle('bad', !ok); if (!ok) all = false;
+  });
+  if (all) {
+    qs.done = true; $('#btnCheck').disabled = true;
+    let msg = 'Đúng.';
+    if (!qs.revealed) {
+      S.ok[cur.id] = (S.ok[cur.id] || 0) + 1; save();
+      const k = S.ok[cur.id];
+      msg += k >= 3 ? (k === 3 ? ' Bậc này đã thành thạo. Sang phần Tự code trước khi lên bậc mới.' : ' Thêm một lần luyện cho chắc tay.') : ` Còn ${3 - k} câu đúng nữa để thành thạo bậc này.`;
+    } else msg += ' Câu này đã xem lời giải nên không tính. Bấm "Câu khác" để làm với số mới.';
+    $('#qfeed').innerHTML = `<p class="fb ok">${msg}</p>`; showSol(); renderNav(); renderCurve();
+  } else {
+    qs.tries++;
+    const hi = q.hints[Math.min(qs.tries, q.hints.length) - 1];
+    $('#qfeed').innerHTML = `<p class="fb bad">Chưa đúng (lần ${qs.tries}). Gợi ý: ${hi}</p>`;
+    if (qs.tries >= 2) $('#btnReveal').disabled = false;
+  }
+}
+$('#btnCheck').addEventListener('click', check);
+$('#btnNew').addEventListener('click', newQuestion);
+$('#btnReveal').addEventListener('click', () => {
+  qs.revealed = true; showSol();
+  $('#qfeed').innerHTML = '<p class="fb bad">Đã mở lời giải. Đọc từng bước, tự điền lại cho đúng, rồi bấm "Câu khác" để thử số mới. Câu này không tính điểm.</p>';
+});
+
+/* ---------------- code task ---------------- */
+function renderCode() {
+  const c = cur.code;
+  let h = '<h3>Tự code · không có đáp án</h3><p class="note">Viết trong repo của bạn, chạy, so với bảng. Gợi ý chỉ là tên API, không phải lời giải.</p>';
+  if (c.task) h += `<p>${c.task}</p>`;
+  if (c.steps) h += `<ol>${c.steps.map(s => `<li>${s}</li>`).join('')}</ol>`;
+  if (c.sig) h += `<pre class="sig">${esc(c.sig)}</pre>`;
+  if (c.tests) {
+    const hd2 = c.heads || ['Đầu vào', 'Kết quả đúng'];
+    h += `<div class="tbl"><table><thead><tr><th>${hd2[0]}</th><th>${hd2[1]}</th></tr></thead><tbody>${c.tests.map(([a, b]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  if (c.ask) h += `<p><b>Tự hỏi:</b> ${c.ask}</p>`;
+  if (c.hint) h += `<details><summary>Gợi ý API (mở khi kẹt quá 10 phút)</summary><p>${c.hint}</p></details>`;
+  $('#code').innerHTML = h;
+}
+
+/* ---------------- nav + curve ---------------- */
+function renderNav() {
+  $('#nav').innerHTML = LEVELS.map((L, i) => {
+    const k = Math.min(3, S.ok[L.id] || 0);
+    return `<button type="button" class="lv${i === S.level ? ' on' : ''}${k >= 3 ? ' done' : ''}" data-i="${i}"${i === S.level ? ' aria-current="step"' : ''}><span class="lvn">${i + 1}</span><span class="lvt">${esc(L.name)}</span><span class="pips" aria-label="${k}/3 câu đúng">${[0, 1, 2].map(j => `<i class="${j < k ? 'f' : ''}"></i>`).join('')}</span></button>`;
+  }).join('');
+}
+$('#nav').addEventListener('click', e => { const b = e.target.closest('.lv'); if (b) renderLevel(Number(b.dataset.i)); });
+function renderCurve() {
+  const X = t => 18 + (t - 1) * (226 / 7), Y = t => 100 - (t * t - 1) / 63 * 84;
+  let d = ''; for (let t = 1; t <= 8.0001; t += .1) d += (d ? 'L' : 'M') + X(t).toFixed(1) + ' ' + Y(t).toFixed(1);
+  const done = LEVELS.filter(L => (S.ok[L.id] || 0) >= 3).length;
+  const dots = LEVELS.map((L, i) => {
+    const t = i + 1, m = (S.ok[L.id] || 0) >= 3, on = i === S.level;
+    return `${on ? `<circle cx="${X(t)}" cy="${Y(t)}" r="8.5" fill="none" stroke="var(--vec)" stroke-width="1.5"/>` : ''}<circle cx="${X(t)}" cy="${Y(t)}" r="5" fill="${m ? 'var(--ok)' : 'var(--paper)'}" stroke="${m ? 'var(--ok)' : 'var(--grid2)'}" stroke-width="2"/><text x="${X(t)}" y="118" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="var(--muted)">${t}</text>`;
+  }).join('');
+  $('#curve').innerHTML = `<line x1="10" y1="104" x2="252" y2="104" stroke="var(--line)" stroke-width="1"/><path d="${d}" fill="none" stroke="var(--grid2)" stroke-width="2" stroke-dasharray="4 4"/>${dots}`;
+  $('#curveCap').textContent = `Thành thạo ${done}/8 bậc · mỗi bậc khó hơn bậc trước, như y = x²`;
+}
+
+/* ---------------- level ---------------- */
+function renderLevel(i) {
+  S.level = clamp(i | 0, 0, LEVELS.length - 1); save(); cur = LEVELS[S.level];
+  $('#theory').innerHTML = `<p class="eyebrow">Bậc ${S.level + 1} / 8</p><h2>${esc(cur.name)}</h2><p class="lede">${esc(cur.lede)}</p>
+    <section><h3>Vấn đề</h3><p>${cur.problem}</p></section>
+    <section><h3>Phương pháp</h3><p>${cur.method}</p></section>
+    <section><h3>Công thức</h3><pre class="f">${esc(cur.formula)}</pre></section>
+    <section><h3>Ví dụ số</h3><p>${cur.example}</p></section>`;
+  sc = SCENES[cur.scene](); revealNow = false; drag = null;
+  $('#labnote').textContent = sc.note;
+  buildControls(); refresh(); newQuestion(); renderCode(); renderNav(); renderCurve();
+}
+
+$('#hide').checked = !!S.hide;
+$('#hide').addEventListener('change', e => { S.hide = e.target.checked; save(); revealNow = false; refresh(); });
+let armed = false;
+$('#btnReset').addEventListener('click', e => {
+  if (!armed) { armed = true; e.target.textContent = 'Bấm lần nữa để xoá'; setTimeout(() => { armed = false; e.target.textContent = 'Xoá tiến độ'; }, 3000); return; }
+  armed = false; e.target.textContent = 'Xoá tiến độ'; S.ok = {}; save(); renderNav(); renderCurve();
+});
+
+new ResizeObserver(sizeCanvas).observe(cv);
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { draw(); });
+new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+renderLevel(S.level || 0);
+sizeCanvas();
+})();
+</script>
+
+</body>
+</html>

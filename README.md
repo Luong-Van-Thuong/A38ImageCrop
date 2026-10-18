@@ -5,6 +5,9 @@ Console app C# dùng OpenCvSharp4 để dò vùng và cắt ảnh, có sẵn cô
 > 📐 **[docs/TU_DUY_MACHINE_VISION.md](docs/TU_DUY_MACHINE_VISION.md)** — phân tích hiện trạng pipeline,
 > phản biện hướng xoay ảnh bằng ApproxPolyDP, và tư duy machine vision cổ điển cho bài toán
 > phát hiện sứt mẻ 1-2mm. Đọc trước khi sửa thuật toán.
+>
+> 🧭 **[docs/BAN_GA_XOAY.html](docs/BAN_GA_XOAY.html)** — phòng tập 8 bậc về vector, atan2, toạ độ cực
+> và phép xoay (đúng quy ước toạ độ ảnh + `GetRotationMatrix2D`). Mở bằng trình duyệt, kéo thả, tự tính, tự code.
 
 ## Chạy
 
