@@ -12,6 +12,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media.Converters;
 using System.Xml;
+using static ProjectAlign.PmAlign.PmAlign_TuCode;
 
 namespace ProjectAlign.PmAlign
 {
@@ -220,6 +221,7 @@ namespace ProjectAlign.PmAlign
         public static List<KetQuaPm> run_(Mat anh, PmModel model, RectXoay vungTim, PmCfg cfg,
                                      Action<string>? log = null)
         {
+            var dh = System.Diagnostics.Stopwatch.StartNew();
             List<KetQuaPm> ketQuaList = new();
             // Nếu không tìm thấy giá trị nào trong model thì trả về kết quả null luôn
             if (model == null || model.Muc.Count == 0)
@@ -239,7 +241,7 @@ namespace ProjectAlign.PmAlign
             
             //Mat anhDisplay = anh.Clone();
             List<MucAnh> lPointRawRun = new();
-            KetQuaPm kqPM = new();
+            KetQuaPm kqPM = null;
             for (int muc = soMuc - 1; muc >= 0; muc--)
             {
                 Mat anhTang = anhXam.Clone();
@@ -247,220 +249,268 @@ namespace ProjectAlign.PmAlign
                 for (int mucAnh = 0;mucAnh < muc; mucAnh++)
                 {
                     Cv2.PyrDown(anhTang, anhTang);
-                }    
+                }
+
+                using Mat anhMo = new();
+                Cv2.GaussianBlur(anhTang, anhMo, new Size(5, 5), 0);
 
                 using Mat sobelX = new();
-                Cv2.Sobel(anhTang, sobelX, MatType.CV_32F, 1, 0, 3);
+                Cv2.Sobel(anhMo, sobelX, MatType.CV_32F, 1, 0, 3);
                 //Dbg.Show(sobelX, "SobelX");
 
                 using Mat sobelY = new();
-                Cv2.Sobel(anhTang, sobelY, MatType.CV_32F, 0, 1, 3);
+                Cv2.Sobel(anhMo, sobelY, MatType.CV_32F, 0, 1, 3);
                 //Dbg.Show(sobelY, "SobelY");
 
                 using Mat cannyImg = new();
-                Cv2.Canny(anhTang, cannyImg, 30, 100);
+                Cv2.Canny(anhMo, cannyImg, 30, 100);
                 Dbg.Show(cannyImg, "anh canny");
 
+                
 
                 double tiLe = 1.0 / (1 << muc);
                 //var kt = new Size(Math.Max(4, (int)Math.Round(w * tiLe)),
                 //                  Math.Max(4, (int)Math.Round(h * tiLe)));
                 w = anhTang.Width;
                 h = anhTang.Height;
-                var kt = new Size(Math.Max(4, (int)Math.Round(w * tiLe)),
-                                  Math.Max(4, (int)Math.Round(h * tiLe)));
-                var pts_ = new List<(int x, int y, double ux, double uy)>();
-                var ux = new Mat(anhTang.Size(), MatType.CV_32F, Scalar.All(0));
-                var uy = new Mat(anhTang.Size(), MatType.CV_32F, Scalar.All(0));
-                for (int y = 0; y < h; y++)
+
+                int n = (int)(w * h);
+                float[] sxArr = new float[n];
+                float[] syArr = new float[n];
+                byte[] cannyArr = new byte[n];
+                System.Runtime.InteropServices.Marshal.Copy(sobelX.Data, sxArr, 0, n);
+                System.Runtime.InteropServices.Marshal.Copy(sobelY.Data, syArr, 0, n);
+                System.Runtime.InteropServices.Marshal.Copy(cannyImg.Data, cannyArr, 0, n);
+
+                //var kt = new Size(Math.Max(4, (int)Math.Round(w * tiLe)),
+                //                  Math.Max(4, (int)Math.Round(h * tiLe)));
+
+                float[] uxArr = new float[n];
+                float[] uyArr = new float[n];
+                for (int i = 0; i < n; i++)
                 {
-                    for(int x = 0; x < w; x++)
-                    {
-                       
-                        if (cannyImg.At<byte>(y, x) == 0) continue;
-                        double gx = sobelX.At<float>(y, x);
-                        double gy = sobelY.At<float>(y, x);
-                        double gxy = Math.Sqrt(gx * gx + gy * gy);
-                        if (gxy < 1e-3f)
-                        {
-                            ux.Set(y, x, 0);
-                            uy.Set(y, x, 0);
-                            continue;
-                        } 
-                        else
-                        {
-                            ux.Set(y, x, gx/gxy);
-                            uy.Set(y, x, gy/gxy);
-                            pts_.Add(((int)x, (int)y, (double)(gx / gxy), (double)(gy / gxy)));
-                        }
-                    }
+                    if (cannyArr[i] == 0) continue;
+                    double gxy = Math.Sqrt(sxArr[i] * sxArr[i] + syArr[i] * syArr[i]);
+                    if (gxy < (1e-3))
+                        continue;
+                    uxArr[i] = (float)(sxArr[i] / gxy);
+                    uyArr[i] = (float)(syArr[i] / gxy);
                 }
+                    
                 double soBuocXoay = model.Muc[muc].BuocGocDo;
+                
                 // Đổi Góc sang radian
                 double theTa = soBuocXoay * Math.PI / 180;
+                double tMin = -cfg.GocDenDo * Math.PI / 180;   // đổi dấu nên hai đầu đảo chỗ
+                double tMax = -cfg.GocTuDo * Math.PI / 180;
+                int heSo = 1 << muc;
+
                 //double buocXoay = 2 * Math.PI / theTa;
                 // Nếu đây là tầng chạy thô đầu tiên thì kiểm tra toàn bộ bộ các điểm và xoay đủ từ 0 2Pi radian 
                 DiemAnh diemGoc = new();
-                if (lPointRawRun == null || lPointRawRun.Count == 0)
+                if (muc == soMuc -1)
                 {
-                    for (double xoay = 0; xoay < 2*Math.PI; xoay += theTa)
+                    for (double xoay = tMin; xoay < tMax; xoay += theTa)
                     {
+                        BangXoay bang = XoayModel(model, muc, xoay);
                         for (int y = 0; y < h; y++)
                         {
                             for (int x = 0; x < w; x++)
                             {
-                                var pointRawRung = ChamMotDiem(model, x, y, xoay, muc, ux, uy);
-                                if (pointRawRung.tongDiem < 0.5) continue;
-                                lPointRawRun.Add(new(muc,pointRawRung));
+                                if (vungTim.HopLe && !vungTim.Chua(x * heSo, y * heSo)) continue;
+
+                                //var pointRawRung = ChamMotDiem(model, x, y, xoay, muc, ux, uy);
+                                var pointRawRung = ChamMotDiem(bang, x, y, uxArr, uyArr, (int)w, (int)h);
+                                if (pointRawRung!=null && pointRawRung.tongDiem < cfg.DiemToiThieu) continue;
+                                lPointRawRun.Add(new(muc, pointRawRung));
                             }
                         }
                     }
+                    List<DiemAnh> lDiemAnhNMS = new();
+                    lDiemAnhNMS = lPointRawRun.Select(x => x.diemAnh_).ToList();
+                    double khoangPx = Math.Max(2, 0.5 * model.Muc[muc].BanKinh);
+                    var lPoint = LocTrungNMS(lDiemAnhNMS, khoangPx, cfg.SoUngVienDinh);
+                    lPointRawRun.Clear();
+                    foreach (var p in lPoint)
+                    {
+                        lPointRawRun.Add(new(muc, p));
+                    }
+
+                    log?.Invoke($"L{muc}: cham diem {dh.ElapsedMilliseconds} ms | {lPointRawRun.Count(p => p.MucAnh_ == muc)} ung vien");
                 }
                 else // Lấy vị trí tìm từ lần chạy trước đó để tìm kiếm tinh không quyết toàn bộ ảnh nữa
                 {
                     if (lPointRawRun != null && lPointRawRun.Count > 0)
                     {
-
-                        
                         int mucRawBefor = muc + 1;
                         var lMucAnhRawBefor = lPointRawRun.Where(x => x.MucAnh_ == mucRawBefor).ToList();
                         int cLPointRawRun = lMucAnhRawBefor.Count();
-
-                        if (cLPointRawRun > 0 )
+                        double buocTren = model.Muc[muc + 1].BuocGocDo * Math.PI / 180;
+                        int k = (int)Math.Ceiling(buocTren / theTa);
+                        if (cLPointRawRun > 0)
                         {
+
                             for (int i = 0; i < cLPointRawRun; i++)
                             {
-                                if(lMucAnhRawBefor[i].diemAnh_.tongDiem > 0.8 )
-                                {
-                                    double xTinh = lMucAnhRawBefor[i].diemAnh_.X0 * 2;
-                                    double yTinh = lMucAnhRawBefor[i].diemAnh_.Y0 * 2;
-                                    double gocXoay_ = lMucAnhRawBefor[i].diemAnh_.gocXoay;
-                                    // Phần này cần code tiếp để chạy cho lần tinh chỉnh ở mức sau 
-                                    var diemTinh = ChamMotDiem(model, xTinh, yTinh, gocXoay_, muc, ux, uy);
-                                    lPointRawRun.Add(new(muc, diemTinh));   
-                                }
-                            }
-                            if (muc == 0)
-                            {
+                                DiemAnh diemTot = null;                                
+                                double xTinh = lMucAnhRawBefor[i].diemAnh_.X0 * 2;
+                                double yTinh = lMucAnhRawBefor[i].diemAnh_.Y0 * 2;
+                                double gocXoay_ = lMucAnhRawBefor[i].diemAnh_.gocXoay;
+                           
                                 double max = 0;
-
-                                foreach (var x in lPointRawRun)
+                                for(int k_ = -k; k_ <=k; k_++)
                                 {
-                                    if (x.MucAnh_ == 0)
+                                    double gocXoay_1 = gocXoay_ + k_ * theTa;
+                                    BangXoay bang = XoayModel(model, muc, gocXoay_1);  // xoay 1 lần cho góc gocXoay_1
+                                    for (int dy_ = -2; dy_<=2; dy_++)
                                     {
-                                        if (x.diemAnh_.tongDiem > max)
+                                        for(int dx_ = -2; dx_ <=2; dx_++)
                                         {
-                                            max = x.diemAnh_.tongDiem;
-                                            kqPM.X = x.diemAnh_.X0;
-                                            kqPM.Y = x.diemAnh_.Y0;
-                                            //diemGoc = x.diemAnh_;
-
-                                        }
-                                    }
+                                            var d = ChamMotDiem(bang, (int)xTinh + dx_, (int)yTinh + dy_, uxArr, uyArr, (int)w, (int)h);
+                                            if (diemTot == null || d.tongDiem > diemTot.tongDiem) diemTot = d;
+                                        }  
+                                    }    
+  
                                 }
+                                if (diemTot != null && diemTot.tongDiem < cfg.DiemToiThieu) continue;
+                                lPointRawRun.Add(new(muc, diemTot));
+                               
                             }
+                           
+                           
+                        }
+                        else
+                        {
+                            var error = "Tầng trước không tìm được đối tượng nào";
                         }
                     }
-                    
+
                 }
                 anhTang.Dispose();
-                ux.Dispose();
-                uy.Dispose();
+                
                 //anhDisplay.Dispose();
             }
-            ketQuaList.Add(kqPM);
-            Cv2.Circle(anh, new Point((int)ketQuaList[0].X, (int)ketQuaList[0].Y), 1, Scalar.Lime, 1, LineTypes.Link8);
+
+
+            var lTang0 = lPointRawRun.Where(x => x.MucAnh_ == 0)
+                                     .Select(x => x.diemAnh_)
+                                     .Where(d => d.tongDiem >= cfg.DiemToiThieu)   // ngưỡng nhận
+                                     .OrderByDescending(d => d.tongDiem)           // kq[0] = điểm cao nhất
+                                     .Take(cfg.SoKetQua);                          // số kết quả tối đa
+            foreach (var diemTot in lTang0)
+            {
+                kqPM = new();
+                kqPM.X = diemTot.X0;
+                kqPM.Y = diemTot.Y0;
+                double gocDo = -diemTot.gocXoay * 180 / Math.PI;
+                kqPM.GocDo = ((gocDo + 180) % 360 + 360) % 360 - 180;
+                kqPM.Diem = diemTot.tongDiem;
+                kqPM.DiemXep = diemTot.tongDiem;
+                ketQuaList.Add(kqPM);
+            }
+
+            //Cv2.Circle(anh, new Point((int)ketQuaList[0].X, (int)ketQuaList[0].Y), 1, Scalar.Lime, 1, LineTypes.Link8);
             
             return ketQuaList;
         }
 
-        private static DiemAnh ChamMotDiem(PmModel _model = null, double x = 0, double y = 0, double theTa = 0, int muc = 0, Mat ux = null, Mat uy = null)
-        {
-            
-            DiemAnh mucAnh_ = new();
-            if (_model == null) return mucAnh_;
-            int soLuong = _model.Muc[muc].Diem.Count();
+        //private static DiemAnh ChamMotDiem(PmModel _model = null, double x = 0, double y = 0, double theTa = 0, int muc = 0, Mat ux = null, Mat uy = null)
+        //{
 
-            double s = Math.Sin(theTa);
-            double c = Math.Cos(theTa);
-            int diemModel = 0;
-            double w = ux.Width;
-            double h = ux.Height;      
-            double tongDiem = 0;
-            int soLuongTongDiem = 0;
-            for (int i = 0; i < soLuong; i++)
-            {
-                // Xoay toàn bộ điểm và vector gradient tại điểm đó 
-                double xRaw = _model.Muc[muc].Diem[i].X;
-                double yRaw = _model.Muc[muc].Diem[i].Y;
-                // Tim vi tri cua vat sau khi xoay
-                double conX_ = c * xRaw - s * yRaw;
-                double conY_ = s * xRaw + c * yRaw;
-                // Dịch vật về hệ tọa độ theo điểm x,y
-                int px = (int)Math.Round(conX_ + x);
-                int py = (int)Math.Round(conY_ + y);
-                // Kiểm tra xem vị trí có nằm trong khoảng của hình không 
-                if (px < 0 || py < 0 || px >= w || py >= h)
-                    continue;
-                // Xoay vector gradient 
-                double gxRaw = _model.Muc[muc].Diem[i].Gx;
-                double gyRaw = _model.Muc[muc].Diem[i].Gy;
-                double gx = c * gxRaw - s * gyRaw;
-                double gy = s * gxRaw + c * gyRaw;
-                // Hướng của vector theo chiều  ux và uy trên ảnh run
-                double ux_ = ux.At<float>(py, px);
-                double uy_ = uy.At<float>(py, px);
-                // Tích vô hướng của vector tại vị trí px,py khi chạy và khi train
-                tongDiem += gx * ux_ + gy * uy_;
-                //soLuongTongDiem++;
-
-            }
-            mucAnh_.X0 = x;
-            mucAnh_.Y0 = y;
-            mucAnh_.tongDiem = tongDiem/ soLuong;
-            mucAnh_.gocXoay = theTa;
-            return mucAnh_;
+        //    var diemMuc = _model.Muc[muc].Diem;
+        //    var nDiem = diemMuc.Count();
+        //    double c = Math.Cos(theTa);
+        //    double s = Math.Sin(theTa);
+        //    // Mang vị trí các điểm sẽ xoay
+        //    int[] oxXoay = new int[nDiem];
+        //    int[] oyXoay = new int[nDiem];
+        //    // Mang vị trí hướng của các điểm sẽ xoay
+        //    float[] gxXoay = new float[nDiem];
+        //    float[] gyXoay = new float[nDiem];
+        //    // Tính trước vị trí khi xoay
+        //    for (int i = 0; i < nDiem; i++)
+        //    {
+        //        oxXoay[i] = (int)Math.Round(c * diemMuc[i].X - s * diemMuc[i].Y);
+        //        oyXoay[i] = (int)Math.Round(s * diemMuc[i].X + c * diemMuc[i].Y);
+        //        gxXoay[i] = (float)(c * diemMuc[i].Gx - s * diemMuc[i].Gy);
+        //        gyXoay[i] = (float)(s * diemMuc[i].Gx + c * diemMuc[i].Gy);
+        //    }
 
 
-        }
+        //    DiemAnh mucAnh_ = new();
 
-        public static List<DiemAnh> LocTrungNMS(List<DiemAnh> ds, double khoangPx, double khoangGocRad, int soGiu)
+        //    int diemModel = 0;
+        //    double w = ux.Width;
+        //    double h = ux.Height;     
+        //    //double ux_ = uxArr[py * W + px];
+        //    double tongDiem = 0;
+        //    int soLuongTongDiem = 0;
+        //    for (int i = 0; i < nDiem; i++)
+        //    {
+        //        // Xoay toàn bộ điểm và vector gradient tại điểm đó 
+        //        double xRaw = gxXoay[i];
+        //        double yRaw = gyXoay[i];
+        //        // Tim vi tri cua vat sau khi xoay
+        //        double conX_ = c * xRaw - s * yRaw;
+        //        double conY_ = s * xRaw + c * yRaw;
+        //        // Dịch vật về hệ tọa độ theo điểm x,y
+        //        int px = (int)Math.Round(conX_ + x);
+        //        int py = (int)Math.Round(conY_ + y);
+        //        // Kiểm tra xem vị trí có nằm trong khoảng của hình không 
+        //        if (px < 0 || py < 0 || px >= w || py >= h)
+        //            continue;
+        //        // Xoay vector gradient 
+        //        double gxRaw = _model.Muc[muc].Diem[i].Gx;
+        //        double gyRaw = _model.Muc[muc].Diem[i].Gy;
+        //        double gx = c * gxRaw - s * gyRaw;
+        //        double gy = s * gxRaw + c * gyRaw;
+        //        // Hướng của vector theo chiều  ux và uy trên ảnh run
+        //        double ux_ = ux.At<float>(py, px);
+        //        double uy_ = uy.At<float>(py, px);
+        //        // Tích vô hướng của vector tại vị trí px,py khi chạy và khi train
+        //        tongDiem += gx * ux_ + gy * uy_;
+        //        //soLuongTongDiem++;
+
+        //    }
+        //    mucAnh_.X0 = x;
+        //    mucAnh_.Y0 = y;
+        //    mucAnh_.tongDiem = tongDiem/ nDiem;
+        //    mucAnh_.gocXoay = theTa;
+        //    return mucAnh_;
+
+
+        //}
+
+        public static List<DiemAnh> LocTrungNMS(List<DiemAnh> ds, double khoangPx, int soGiu)
         {
             List<DiemAnh> lDiemAnh = new();
             List<DiemAnh> giu = new();
             var diem = ds.OrderByDescending(x => x.tongDiem).ToList();
             foreach (var d in diem)
-            { 
+            {
                 bool trung = false;
-                foreach(var g in giu)
+                foreach (var g in giu)
                 {
                     double dx = g.X0 - d.X0; double dy = g.Y0 - d.Y0;
                     double dxy = dx * dx + dy * dy;
-                    double gocR = GocLec(d.gocXoay, g.gocXoay);
-                    if(dxy < khoangPx*khoangPx || gocR < khoangGocRad)
+                    //double gocR = GocLec(d.gocXoay, g.gocXoay);
+                    if (dxy < khoangPx * khoangPx)
                     {
                         trung = true;
                         break;
-                    }    
+                    }
                 }
-                if (!trung) 
-                {   
+                if (!trung)
+                {
                     giu.Add(d);
                 }
-                if (giu != null && giu.Count > soGiu)
-                {
+                lDiemAnh = giu;
+                if (giu.Count >= soGiu)
                     return lDiemAnh;
-                }
             }
             return lDiemAnh;
         }
-        private static double GocLec(double a, double b)
-        {
-            double d = a - b;
-            while (d > 0) { d -= 2 * Math.PI; }
-            while (d <= 0) { d += 2 * Math.PI; }
-            return d;
-        }
+
         public class DiemAnh
         {
             public double X0;
@@ -479,5 +529,73 @@ namespace ProjectAlign.PmAlign
                 this.diemAnh_ = diemAnh_;
             }
         }
+
+
+
+        public class BangXoay
+        {
+            public double gocXoay;          // góc đã xoay (rad)
+            public int[] oxXoay = [];       // vị trí x của từng điểm model sau khi xoay
+            public int[] oyXoay = [];
+            public float[] gxXoay = [];     // gradient x của từng điểm model sau khi xoay
+            public float[] gyXoay = [];
+        }
+
+        // Gọi 1 lần cho mỗi góc: xoay toàn bộ điểm model
+        private static BangXoay XoayModel(PmModel _model, int muc, double theTa)
+        {
+            var diemMuc = _model.Muc[muc].Diem;
+            int nDiem = diemMuc.Length;
+            double c = Math.Cos(theTa);
+            double s = Math.Sin(theTa);
+            BangXoay bang = new();
+            bang.gocXoay = theTa;
+            bang.oxXoay = new int[nDiem];
+            bang.oyXoay = new int[nDiem];
+            bang.gxXoay = new float[nDiem];
+            bang.gyXoay = new float[nDiem];
+            for (int i = 0; i < nDiem; i++)
+            {
+                // Vị trí sau khi xoay (đã làm tròn sẵn)
+                bang.oxXoay[i] = (int)Math.Round(c * diemMuc[i].X - s * diemMuc[i].Y);
+                bang.oyXoay[i] = (int)Math.Round(s * diemMuc[i].X + c * diemMuc[i].Y);
+                // Hướng gradient sau khi xoay (cùng công thức với vị trí)
+                bang.gxXoay[i] = (float)(c * diemMuc[i].Gx - s * diemMuc[i].Gy);
+                bang.gyXoay[i] = (float)(s * diemMuc[i].Gx + c * diemMuc[i].Gy);
+            }
+            return bang;
+        }
+
+        // Gọi cho mỗi (x, y): KHÔNG xoay nữa, chỉ dịch tới (x, y) rồi đọc mảng
+        private static DiemAnh ChamMotDiem(BangXoay bang, int x, int y, float[] uxArr, float[] uyArr, int W, int H)
+        {
+            int nDiem = bang.oxXoay.Length;
+            double tongDiem = 0;
+            for (int i = 0; i < nDiem; i++)
+            {
+                double tot = 0;
+                for(int dy = -1; dy <=1; dy++)
+                {
+                    for(int dx = -1; dx <= 1; dy++)
+                    {
+                        int px = x + bang.oxXoay[i] + dx;          // chỉ dịch, không xoay
+                        int py = y + bang.oyXoay[i] + dy;
+                        if (px < 0 || py < 0 || px >= W || py >= H) continue;
+                        int k = py * W + px;                   // vị trí pixel (px, py) trong mảng 1 chiều
+                        double v = bang.gxXoay[i] * uxArr[k] + bang.gyXoay[i] * uyArr[k];
+                        if (v > tot) tot = v;
+                    }    
+                }
+
+                tongDiem += tot;
+            }
+            DiemAnh mucAnh_ = new();
+            mucAnh_.X0 = x;
+            mucAnh_.Y0 = y;
+            mucAnh_.tongDiem = tongDiem / nDiem;
+            mucAnh_.gocXoay = bang.gocXoay;
+            return mucAnh_;
+        }
+
     }
 }
