@@ -21,6 +21,7 @@ namespace ProjectAlign.PmAlign
         public static PmModel train_(Mat anhMau, RectXoay roi, IEnumerable<RectXoay> mask,
                                 PmCfg cfg, Action<string>? log = null)
         {
+            var swTrain = System.Diagnostics.Stopwatch.StartNew();   // [DO] đồng hồ tổng train_
             using Mat roiMat = new Mat((int)roi.Rong, (int)roi.Cao, MatType.CV_8UC3);
 
             PmModel model = new();
@@ -36,8 +37,6 @@ namespace ProjectAlign.PmAlign
                 anhMau.CopyTo(xam);
             List<DiemModel> lDiemModel = new();
 
-
-
             // Chay trong so muc 
             double w = anhMau.Width;
             double h = anhMau.Height;
@@ -47,6 +46,7 @@ namespace ProjectAlign.PmAlign
             Mat anhDisplay = anhMau.Clone();
             for (int muc = 0; muc < Math.Max(1, cfg.SoMuc); muc++)
             {
+                var swMuc = System.Diagnostics.Stopwatch.StartNew();   // [DO] đồng hồ cho 1 tầng train
 
                 //Cv2.GaussianBlur(anhTang, anhMo, new Size(3, 3), 2, 2);
                 //Dbg.Show(anhMo, "Anh mo", true);
@@ -187,11 +187,13 @@ namespace ProjectAlign.PmAlign
 
                 lDiemModel.Clear();
 
+                log?.Invoke($"[DO] train L{muc}: {anhTang.Width}x{anhTang.Height} | nDiem={mucPm.Diem.Length} | R={mucPm.BanKinh:F1}px | buocGoc={mucPm.BuocGocDo:F2}° | {swMuc.Elapsed.TotalMilliseconds:F1} ms");   // [DO]
                 Cv2.PyrDown(anhTang, anhTang);
                 Cv2.PyrDown(anhDisplay, anhDisplay);
                 Dbg.Show(anhTang, "Anh nho");
             }
 
+            log?.Invoke($"[DO] TONG train_: {swTrain.Elapsed.TotalMilliseconds:F1} ms");   // [DO]
             return model;
         }
         // Ham tao vung tim kiem hinh chu nhat o vung train 
@@ -222,6 +224,7 @@ namespace ProjectAlign.PmAlign
                                      Action<string>? log = null)
         {
             var dh = System.Diagnostics.Stopwatch.StartNew();
+            var sw = System.Diagnostics.Stopwatch.StartNew();   // [DO] đồng hồ cho từng đoạn trong 1 tầng
             List<KetQuaPm> ketQuaList = new();
             // Nếu không tìm thấy giá trị nào trong model thì trả về kết quả null luôn
             if (model == null || model.Muc.Count == 0)
@@ -244,12 +247,14 @@ namespace ProjectAlign.PmAlign
             KetQuaPm kqPM = null;
             for (int muc = soMuc - 1; muc >= 0; muc--)
             {
+                sw.Restart();   // [DO]
                 Mat anhTang = anhXam.Clone();
 
                 for (int mucAnh = 0;mucAnh < muc; mucAnh++)
                 {
                     Cv2.PyrDown(anhTang, anhTang);
                 }
+                double tPyr = sw.Elapsed.TotalMilliseconds; sw.Restart();   // [DO] thời gian dựng ảnh tầng (PyrDown)
 
                 using Mat anhMo = new();
                 Cv2.GaussianBlur(anhTang, anhMo, new Size(5, 5), 0);
@@ -266,6 +271,7 @@ namespace ProjectAlign.PmAlign
                 Cv2.Canny(anhMo, cannyImg, 30, 100);
                 Dbg.Show(cannyImg, "anh canny");
 
+                double tLoc = sw.Elapsed.TotalMilliseconds; sw.Restart();   // [DO] Blur + Sobel x2 + Canny (+ Dbg.Show nếu đang bật)
                 
 
                 double tiLe = 1.0 / (1 << muc);
@@ -296,6 +302,8 @@ namespace ProjectAlign.PmAlign
                     uxArr[i] = (float)(sxArr[i] / gxy);
                     uyArr[i] = (float)(syArr[i] / gxy);
                 }
+                double tGrad = sw.Elapsed.TotalMilliseconds; sw.Restart();   // [DO] Marshal.Copy + vòng sqrt tạo ux/uy
+                int nDiemDo = model.Muc[muc].Diem.Length;   // [DO] số điểm model ở tầng này
                     
                 double soBuocXoay = model.Muc[muc].BuocGocDo;
                 
@@ -326,6 +334,11 @@ namespace ProjectAlign.PmAlign
                             }
                         }
                     }
+                    double tChamTho = sw.Elapsed.TotalMilliseconds;   // [DO] thời gian vét cạn tầng thô
+                    int soGocDo = (int)Math.Ceiling((tMax - tMin) / theTa);   // [DO] số góc đã thử
+                    long soTuTheDo = (long)w * (long)h * soGocDo;   // [DO] số tư thế tối đa (vungTim có thể bỏ bớt)
+                    int soTruocNMS = lPointRawRun.Count;   // [DO] số ứng viên lọt ngưỡng trước NMS
+                    sw.Restart();   // [DO]
                     List<DiemAnh> lDiemAnhNMS = new();
                     lDiemAnhNMS = lPointRawRun.Select(x => x.diemAnh_).ToList();
                     double khoangPx = Math.Max(2, 0.5 * model.Muc[muc].BanKinh);
@@ -336,6 +349,8 @@ namespace ProjectAlign.PmAlign
                         lPointRawRun.Add(new(muc, p));
                     }
 
+                    double tNMS = sw.Elapsed.TotalMilliseconds;   // [DO]
+                    log?.Invoke($"[DO] run L{muc} {w}x{h} nDiem={nDiemDo} | PyrDown {tPyr:F1} | Blur+Sobel+Canny {tLoc:F1} | ux/uy {tGrad:F1} | Cham {tChamTho:F1} ms ({soGocDo} goc, <= {soTuTheDo} tu the, <= {soTuTheDo * nDiemDo * 9 / 1e6:F0}M phep cham) | {soTruocNMS} ung vien truoc NMS | NMS {tNMS:F1} ms");   // [DO]
                     log?.Invoke($"L{muc}: cham diem {dh.ElapsedMilliseconds} ms | {lPointRawRun.Count(p => p.MucAnh_ == muc)} ung vien");
                 }
                 else // Lấy vị trí tìm từ lần chạy trước đó để tìm kiếm tinh không quyết toàn bộ ảnh nữa
@@ -376,6 +391,8 @@ namespace ProjectAlign.PmAlign
                                 lPointRawRun.Add(new(muc, diemTot));
                                
                             }
+                            long soTuTheTinh = (long)cLPointRawRun * (2 * k + 1) * 25;   // [DO] số tư thế tầng tinh
+                            log?.Invoke($"[DO] run L{muc} {w}x{h} nDiem={nDiemDo} | PyrDown {tPyr:F1} | Blur+Sobel+Canny {tLoc:F1} | ux/uy {tGrad:F1} | Cham {sw.Elapsed.TotalMilliseconds:F1} ms ({cLPointRawRun} ung vien x {2 * k + 1} goc x 25 vi tri = {soTuTheTinh} tu the, {soTuTheTinh * nDiemDo * 9 / 1e6:F0}M phep cham)");   // [DO]
                            
                            
                         }
@@ -408,78 +425,9 @@ namespace ProjectAlign.PmAlign
                 kqPM.DiemXep = diemTot.tongDiem;
                 ketQuaList.Add(kqPM);
             }
-
-            //Cv2.Circle(anh, new Point((int)ketQuaList[0].X, (int)ketQuaList[0].Y), 1, Scalar.Lime, 1, LineTypes.Link8);
-            
+            log?.Invoke($"[DO] TONG run_: {dh.Elapsed.TotalMilliseconds:F1} ms");   // [DO]
             return ketQuaList;
         }
-
-        //private static DiemAnh ChamMotDiem(PmModel _model = null, double x = 0, double y = 0, double theTa = 0, int muc = 0, Mat ux = null, Mat uy = null)
-        //{
-
-        //    var diemMuc = _model.Muc[muc].Diem;
-        //    var nDiem = diemMuc.Count();
-        //    double c = Math.Cos(theTa);
-        //    double s = Math.Sin(theTa);
-        //    // Mang vị trí các điểm sẽ xoay
-        //    int[] oxXoay = new int[nDiem];
-        //    int[] oyXoay = new int[nDiem];
-        //    // Mang vị trí hướng của các điểm sẽ xoay
-        //    float[] gxXoay = new float[nDiem];
-        //    float[] gyXoay = new float[nDiem];
-        //    // Tính trước vị trí khi xoay
-        //    for (int i = 0; i < nDiem; i++)
-        //    {
-        //        oxXoay[i] = (int)Math.Round(c * diemMuc[i].X - s * diemMuc[i].Y);
-        //        oyXoay[i] = (int)Math.Round(s * diemMuc[i].X + c * diemMuc[i].Y);
-        //        gxXoay[i] = (float)(c * diemMuc[i].Gx - s * diemMuc[i].Gy);
-        //        gyXoay[i] = (float)(s * diemMuc[i].Gx + c * diemMuc[i].Gy);
-        //    }
-
-
-        //    DiemAnh mucAnh_ = new();
-
-        //    int diemModel = 0;
-        //    double w = ux.Width;
-        //    double h = ux.Height;     
-        //    //double ux_ = uxArr[py * W + px];
-        //    double tongDiem = 0;
-        //    int soLuongTongDiem = 0;
-        //    for (int i = 0; i < nDiem; i++)
-        //    {
-        //        // Xoay toàn bộ điểm và vector gradient tại điểm đó 
-        //        double xRaw = gxXoay[i];
-        //        double yRaw = gyXoay[i];
-        //        // Tim vi tri cua vat sau khi xoay
-        //        double conX_ = c * xRaw - s * yRaw;
-        //        double conY_ = s * xRaw + c * yRaw;
-        //        // Dịch vật về hệ tọa độ theo điểm x,y
-        //        int px = (int)Math.Round(conX_ + x);
-        //        int py = (int)Math.Round(conY_ + y);
-        //        // Kiểm tra xem vị trí có nằm trong khoảng của hình không 
-        //        if (px < 0 || py < 0 || px >= w || py >= h)
-        //            continue;
-        //        // Xoay vector gradient 
-        //        double gxRaw = _model.Muc[muc].Diem[i].Gx;
-        //        double gyRaw = _model.Muc[muc].Diem[i].Gy;
-        //        double gx = c * gxRaw - s * gyRaw;
-        //        double gy = s * gxRaw + c * gyRaw;
-        //        // Hướng của vector theo chiều  ux và uy trên ảnh run
-        //        double ux_ = ux.At<float>(py, px);
-        //        double uy_ = uy.At<float>(py, px);
-        //        // Tích vô hướng của vector tại vị trí px,py khi chạy và khi train
-        //        tongDiem += gx * ux_ + gy * uy_;
-        //        //soLuongTongDiem++;
-
-        //    }
-        //    mucAnh_.X0 = x;
-        //    mucAnh_.Y0 = y;
-        //    mucAnh_.tongDiem = tongDiem/ nDiem;
-        //    mucAnh_.gocXoay = theTa;
-        //    return mucAnh_;
-
-
-        //}
 
         public static List<DiemAnh> LocTrungNMS(List<DiemAnh> ds, double khoangPx, int soGiu)
         {
@@ -576,7 +524,7 @@ namespace ProjectAlign.PmAlign
                 double tot = 0;
                 for(int dy = -1; dy <=1; dy++)
                 {
-                    for(int dx = -1; dx <= 1; dy++)
+                    for(int dx = -1; dx <= 1; dx++)
                     {
                         int px = x + bang.oxXoay[i] + dx;          // chỉ dịch, không xoay
                         int py = y + bang.oyXoay[i] + dy;
@@ -596,6 +544,10 @@ namespace ProjectAlign.PmAlign
             mucAnh_.gocXoay = bang.gocXoay;
             return mucAnh_;
         }
+
+
+
+        
 
     }
 }
